@@ -1,6 +1,6 @@
 
 import numpy as np
-
+from copy import copy
 
 def transpose_nbt(nbt):
     """
@@ -54,6 +54,9 @@ def check_symmetry(nbt):
     # Get the bodiness of the tensor
     n = len(nbt.shape) // 3
     
+    if n > 2:
+      raise ValueError(f"Currently only implemented for one and two body tensors. Given tensor is {n} body in nature.")
+
     issymmetric = 0
     if n == 1:
       issymmetric += int(not np.allclose(nbt, np.transpose(nbt, (0, 2, 1))))
@@ -71,3 +74,28 @@ def check_symmetry(nbt):
 
 
 
+def symmetrize_tbt(tbt):
+  """
+  Symmetrize a two body tensor to have the eight fold symmetry.
+  
+  Parameters
+  ----------
+  tbt : np.ndarray
+      A two body tensor of shape (i, p, q, j, r, s).
+  
+  Returns
+  -------
+  np.ndarray
+      A symmetrized two body tensor of shape (i, p, q, j, r, s).
+  """
+  tbt_copy = copy(tbt)
+
+  tbt_copy = (tbt_copy + np.transpose(tbt_copy, (0, 2, 1, 3, 4, 5)))/2
+  tbt_copy = (tbt_copy + np.transpose(tbt_copy, (0, 1, 2, 3, 5, 4)))/2
+  tbt_copy = (tbt_copy + np.transpose(tbt_copy, (0, 2, 1, 3, 5, 4)))/2
+  tbt_copy = (tbt_copy + np.transpose(tbt_copy, (3, 1, 2, 0, 4, 5)))/2
+  tbt_copy = (tbt_copy + np.transpose(tbt_copy, (3, 2, 1, 0, 4, 5)))/2
+  tbt_copy = (tbt_copy + np.transpose(tbt_copy, (3, 1, 2, 0, 5, 4)))/2
+  tbt_copy = (tbt_copy + np.transpose(tbt_copy, (3, 2, 1, 0, 5, 4)))/2
+
+  return tbt_copy
