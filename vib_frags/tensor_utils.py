@@ -1,6 +1,12 @@
 
 import numpy as np
 from copy import copy
+from openfermion import FermionOperator
+
+
+
+
+
 
 def transpose_nbt(nbt):
     """
@@ -32,6 +38,9 @@ def transpose_nbt(nbt):
       raise ValueError("Currently only implemented for one, two and three body tensors.")
 
     return nbt
+
+
+
 
 
 
@@ -74,6 +83,10 @@ def check_symmetry(nbt):
 
 
 
+
+
+
+
 def symmetrize_tbt(tbt):
   """
   Symmetrize a two body tensor to have the eight fold symmetry.
@@ -99,3 +112,38 @@ def symmetrize_tbt(tbt):
   tbt_copy = (tbt_copy + np.transpose(tbt_copy, (3, 2, 1, 0, 5, 4)))/2
 
   return tbt_copy
+
+
+
+
+
+
+def tbt2op(tbt):
+    """
+    convert two-body-tensor to FermionOperator. The ordering convention of qubits is such that an element (i, p, q, j, r, s) of the tensor will be mapped to the coefficient
+    of the FermionOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodes + p, Q = i*nmodes + q, R = j*nmodes + r, S = j*nmodes + s.
+
+    Args:
+        tbt (np.array): two-body-tensor
+
+    Returns:
+        FermionOperator: FermionOperator corresponding to the input chemist ordered two-body-tensor
+    """
+    nmodes = tbt.shape[0]
+
+    op = FermionOperator()
+    nmodals = tbt.shape[2]
+    for i in range(nmodes):
+      for j in range(nmodes):
+        for p in range(nmodals):
+          P = i * nmodes + p
+          for q in range(nmodals):
+            Q = i * nmodes + q
+            for r in range (nmodals):
+              R = j * nmodes + r
+              for s in range (nmodals):
+                S = j * nmodes + s
+                term = ((P,1),(Q,0), (R,1),(S,0))
+                coeff = tbt[i,p,q,j,r,s]
+                op += FermionOperator(term, coeff)
+    return op
