@@ -1,5 +1,6 @@
 #Utility file to perfeorm double factorization of two mode vibrational Hamiltonian in Christiansen form
 import numpy as np
+from . import tensor_utils as tu
 
 def SF_terms(tbt):
     """
@@ -19,7 +20,7 @@ def SF_terms(tbt):
         Eigenvectors of the reshaped tensor.
     """
     # Check if the tensor has the correct symmetry
-    if not check_symmetry(tbt):
+    if not tu.check_symmetry(tbt):
       raise ValueError("The tensor does not have the correct symmetry.")
     
     # Compute the single factorization of the tensor
