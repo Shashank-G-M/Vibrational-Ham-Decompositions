@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+CH2O.hdf5
+CH4.hdf5
+CO2.hdf5
+H2S.hdf5
+vib_frags/__pycache__/__init__.cpython-38.pyc
+vib_frags/__pycache__/df_utils.cpython-38.pyc
