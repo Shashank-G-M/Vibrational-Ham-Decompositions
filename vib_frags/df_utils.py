@@ -1,6 +1,7 @@
 #Utility file to perfeorm double factorization of two mode vibrational Hamiltonian in Christiansen form
 import numpy as np
 from . import tensor_utils as tu
+from opt_einsum import contract
 
 def SF_terms(tbt):
     """
@@ -26,16 +27,24 @@ def SF_terms(tbt):
     # Compute the single factorization of the tensor
     tbt_mat = np.reshape(tbt, (tbt.shape[0] * tbt.shape[1] * tbt.shape[2], tbt.shape[3] * tbt.shape[4] * tbt.shape[5]))
     
+    # Check if the reshaped tensor is symmetric
+    assert np.sum(np.abs(tbt_mat - tbt_mat.T)) < 1e-10
+
     # Compute the eigenvalues and eigenvectors of the reshaped tensor
     eigvals, eigvecs = np.linalg.eigh(tbt_mat)
     
+    # Sort the eigenvalues and eigenvectors according to the magnitude of the eigenvalues
+    sort_idx = np.argsort(np.abs(eigvals))[::-1]
+    eigvals = eigvals[sort_idx]
+    eigvecs = eigvecs[:, sort_idx]
+
     return eigvals, eigvecs
 
 
 
 
 
-def DF_terms(tbt):
+def DF_terms(tbt, tol=1e-10, force_sym = True):
     """
     Computes double factorization of a two body tensor. Returns three objects: Eigenvalues from first factorization sorted according to their magnitude, 
     Eigenvalues from second factorization sorted according to their magnitude encoded in a tensor, and the orbital rotation matrix for each node of each 
@@ -46,6 +55,13 @@ def DF_terms(tbt):
     ----------
     tbt : np.ndarray
         A two body tensor of shape (i, p, q, j, r, s).
+    tol : float
+        Tolerance for truncation of fragments. Default is 1e-10.
+    force_sym : bool
+        If True, an intermediate matrix after single factorization is forced to be symmetric. 
+        This is done to avoid numerical instabilities in the second eigenvalue decomposition.
+        Ideally, this intermediate matrix should be symmetric, but due to numerical errors, it may not be.
+        Default is True.
 
     Returns
     -------
@@ -65,9 +81,11 @@ def DF_terms(tbt):
     
     # Perform first factorization of the tensor
     SF_es, SF_vs = SF_terms(tbt)
-    SF_sort_idx = np.argsort(np.abs(SF_es))[::-1]
-    SF_es = SF_es[SF_sort_idx]
-    SF_vs = SF_vs[:, SF_sort_idx]
+
+    #Truncate fragments
+    lrg_frag_idx = np.where(np.abs(SF_es) > tol)[0]              #Get the indices of the fragments with eigenvalues greater than the tolerance
+    SF_es = SF_es[lrg_frag_idx]                            
+    SF_vs = SF_vs[:, lrg_frag_idx]
 
     nfrags = len(SF_es)
     nmodes = tbt.shape[0]
@@ -78,17 +96,60 @@ def DF_terms(tbt):
     orbrot_ten = np.zeros((nfrags, nmodes, nmodals, nmodals))
     
     # Perform second factorization of the tensor
-    for i in range (nfrags):
-       SF_v = SF_vs[:, [i]]                         #Vector storing the information of i'th fragment
-       for j in range(nmodes):
-          DF_terms_mat = SF_v[j * nmodals : (j + 1) * nmodals, [0]]      #Extract the information of j'th mode
-          DF_terms_mat = np.reshape(DF_terms_mat, (nmodals, nmodals))          #Reshape the vector to a matrix of size (nmodals, nmodals) 
-          assert np.sum(np.abs(DF_terms_mat - DF_terms_mat.T)) < 1e-10
+    for h in range (nfrags):
+       SF_v = SF_vs[:, [h]]                                #Vector storing the information of h'th fragment
+       SF_v = np.reshape(SF_v, (nmodes, nmodals, nmodals)) #Reshape the vector in to a tensor with each row storing a matrix of size (nmodals, nmodals)
+       for i in range(nmodes):
+          DF_terms_mat = SF_v[i, :, :]          #Extract the information of i'th mode
+          if force_sym:
+            DF_terms_mat = (DF_terms_mat + DF_terms_mat.T)/2
+          try:
+            diff = np.linalg.norm(DF_terms_mat - DF_terms_mat.T, 2)
+            assert diff < 1e-6
+          except AssertionError:
+            print ("frag index = ", h, "Mode index = ", i, "Diff = ", diff)
+            raise AssertionError("The matrix is not symmetric.")
 
           DF_es, DF_vs = np.linalg.eigh(DF_terms_mat)          #Second factorization (gives coefficients of diagonal operators and the orbital rotation matrix)
           DF_sort_idx = np.argsort(np.abs(DF_es))[::-1]        #Sort the eigenvalues according to their magnitude
           DF_es = DF_es[DF_sort_idx]                        
           DF_vs = DF_vs[:, DF_sort_idx]                    
-          DF_e_ten[i, j, :] = DF_es                            #Store the eigenvalues in the tensor
-          orbrot_ten[i, j, :, :] = DF_vs                       #Store the eigenvectors = orbital rotation matrix in the tensor
+          DF_e_ten[h, i, :] = DF_es                            #Store the eigenvalues in the tensor
+          orbrot_ten[h, i, :, :] = DF_vs                       #Store the eigenvectors = orbital rotation matrix in the tensor
     return SF_es, DF_e_ten, orbrot_ten
+
+
+
+
+
+
+
+
+
+def get_DF_tbts(tbt, tol = 1e-5):
+  """
+  Perform double factorization and return a list of two body tensors for each fragment.
+
+  Parameters
+  ----------
+  tbt : np.ndarray
+      A two body tensor of shape (i, p, q, j, r, s).
+  tol : float
+      Tolerance for truncation of fragments. Default is 1e-5.
+  
+  Returns
+  -------
+  list of np.ndarray
+      A list of two body tensors for each fragment.
+  """
+  SF_es, DF_e_ten, orbrot_ten = DF_terms(tbt, tol)
+  frag_tens = []                                          #List to store fragment tensors
+
+  print (len(SF_es), " fragments found with eigenvalues greater than ", tol)
+  for h in range(len(SF_es)):
+    coeff_mat = DF_e_ten[h, :, :]                         #Extract the coefficients of the i'th fragment
+    u = orbrot_ten[h, :, :, :]                            #Extract the orbital rotation matrix of the h'th fragment for all modes
+    frag_ten = contract('ik,jl,ipk,iqk,jrl,jsl -> ipqjrs', coeff_mat, coeff_mat, u, u, u, u)
+    frag_ten *= SF_es[h]                                  #Multiply the fragment with the eigenvalues of the first factorization
+    frag_tens.append(frag_ten)
+  return frag_tens
