@@ -44,7 +44,7 @@ def SF_terms(tbt):
 
 
 
-def DF_terms(tbt, tol=1e-10, force_sym = True):
+def DF_terms(tbt, cutoff=1e-10, force_sym = False):
     """
     Computes double factorization of a two body tensor. Returns three objects: Eigenvalues from first factorization sorted according to their magnitude, 
     Eigenvalues from second factorization sorted according to their magnitude encoded in a tensor, and the orbital rotation matrix for each node of each 
@@ -55,8 +55,8 @@ def DF_terms(tbt, tol=1e-10, force_sym = True):
     ----------
     tbt : np.ndarray
         A two body tensor of shape (i, p, q, j, r, s).
-    tol : float
-        Tolerance for truncation of fragments. Default is 1e-10.
+    cutoff : float
+        cutoff for truncation of fragments. Default is 1e-10.
     force_sym : bool
         If True, an intermediate matrix after single factorization is forced to be symmetric. 
         This is done to avoid numerical instabilities in the second eigenvalue decomposition.
@@ -83,7 +83,7 @@ def DF_terms(tbt, tol=1e-10, force_sym = True):
     SF_es, SF_vs = SF_terms(tbt)
 
     #Truncate fragments
-    lrg_frag_idx = np.where(np.abs(SF_es) > tol)[0]              #Get the indices of the fragments with eigenvalues greater than the tolerance
+    lrg_frag_idx = np.where(np.abs(SF_es) > cutoff)[0]              #Get the indices of the fragments with eigenvalues greater than the cutoff
     SF_es = SF_es[lrg_frag_idx]                            
     SF_vs = SF_vs[:, lrg_frag_idx]
 
@@ -126,7 +126,7 @@ def DF_terms(tbt, tol=1e-10, force_sym = True):
 
 
 
-def get_DF_tbts(tbt, tol = 1e-5):
+def get_DF_tbts(tbt, cutoff = 1e-5, force_sym = False):
   """
   Perform double factorization and return a list of two body tensors for each fragment.
 
@@ -134,18 +134,18 @@ def get_DF_tbts(tbt, tol = 1e-5):
   ----------
   tbt : np.ndarray
       A two body tensor of shape (i, p, q, j, r, s).
-  tol : float
-      Tolerance for truncation of fragments. Default is 1e-5.
+  cutoff : float
+      cutoff for truncation of fragments. Default is 1e-5.
   
   Returns
   -------
   list of np.ndarray
       A list of two body tensors for each fragment.
   """
-  SF_es, DF_e_ten, orbrot_ten = DF_terms(tbt, tol)
+  SF_es, DF_e_ten, orbrot_ten = DF_terms(tbt, cutoff, force_sym)
   frag_tens = []                                          #List to store fragment tensors
 
-  print (len(SF_es), " fragments found with eigenvalues greater than ", tol)
+  print (len(SF_es), " fragments found with eigenvalues greater than ", cutoff)
   for h in range(len(SF_es)):
     coeff_mat = DF_e_ten[h, :, :]                         #Extract the coefficients of the i'th fragment
     u = orbrot_ten[h, :, :, :]                            #Extract the orbital rotation matrix of the h'th fragment for all modes
@@ -153,3 +153,41 @@ def get_DF_tbts(tbt, tol = 1e-5):
     frag_ten *= SF_es[h]                                  #Multiply the fragment with the eigenvalues of the first factorization
     frag_tens.append(frag_ten)
   return frag_tens
+
+
+
+
+
+
+
+
+def get_largest_DFF_energies(SF_es, DF_e_ten):
+    """
+    Calculate the absolute largest energies of double factorized fragments within the subspace of one excitation per mode.
+    The inputs to this function can be obtained from DF_terms function.
+
+    Parameters
+    ---------
+    SF_es : np.ndarray
+        Eigenvalues from first factorization sorted according to their magnitude.
+    DF_e_ten : np.ndarray
+        Eigenvalues from second factorization for each fragment and node sorted according to their magnitude.
+        The first axis denotes the fragment index.
+        The second axis denotes the mode index.
+        The third axis denotes the eigenvalue index.
+
+    Returns
+    -------
+    list
+        The absolute largest energies of double factorized fragments.
+    """
+    nmodes = DF_e_ten.shape[1]
+
+    frag_emxs = []
+    for h in range (len(SF_es)):
+        SF_e = SF_es[h]
+        frag_emax1 = np.abs(sum([np.max(DF_e_ten[h, i, :]) for i in range(nmodes)]))
+        frag_emax2 = np.abs(sum([np.min(DF_e_ten[h, i, :]) for i in range(nmodes)]))
+        frag_emax = np.abs(SF_e*max(frag_emax1, frag_emax2))
+        frag_emxs.append(frag_emax)
+    return frag_emxs
