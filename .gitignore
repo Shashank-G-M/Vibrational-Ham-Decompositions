@@ -1,7 +1,4 @@
 __pycache__/
 *.py[cod]
-CH2O.hdf5
-CH4.hdf5
-CO2.hdf5
-H2S.hdf5
-4T3M_HO_basis.zip
+*.zip
+*.hdf5
