@@ -2,7 +2,7 @@
 import numpy as np
 from copy import copy
 from openfermion import FermionOperator
-
+from itertools import permutations
 
 
 
@@ -48,8 +48,8 @@ def transpose_nbt(nbt):
 
 def check_symmetry(nbt):
     """
-    Checks if the n body Hamiltonian tensor has n!*2^n symmetry. For example, obt has 1 symmetry, tbt has 8 symmetries, rbt (three body tensor) has 48 symmetries etc.
-    (Currently only implemented for obt and tbt)
+    Checks if the n body Hamiltonian tensor has n!*2^n symmetry. For example, obt has 1 symmetry, tbt has 8 symmetries, trbt (three body tensor) has 48 symmetries etc.
+    (Currently only implemented up to trbt)
 
     Parameters
     ----------
@@ -64,8 +64,8 @@ def check_symmetry(nbt):
     # Get the bodiness of the tensor
     n = len(nbt.shape) // 3
     
-    if n > 2:
-      raise ValueError(f"Currently only implemented for one and two body tensors. Given tensor is {n} body in nature.")
+    if n > 3:
+      raise ValueError(f"Currently only implemented upto three body tensors. Given tensor is {n} body in nature.")
 
     issymmetric = 0
     if n == 1:
@@ -79,6 +79,28 @@ def check_symmetry(nbt):
       issymmetric += int(not np.allclose(nbt, np.transpose(nbt, (3, 5, 4, 0, 1, 2))))
       issymmetric += int(not np.allclose(nbt, np.transpose(nbt, (3, 4, 5, 0, 2, 1))))
       issymmetric += int(not np.allclose(nbt, np.transpose(nbt, (3, 5, 4, 0, 2, 1))))
+
+    elif n == 3:
+      def do_issymmetric(trbt, issymmetric):
+        issymmetric += int(not np.allclose(trbt, np.transpose(trbt, (0, 2, 1, 3, 4, 5, 6, 7, 8))))
+        issymmetric += int(not np.allclose(trbt, np.transpose(trbt, (0, 1, 2, 3, 5, 4, 6, 7, 8))))
+        issymmetric += int(not np.allclose(trbt, np.transpose(trbt, (0, 1, 2, 3, 4, 5, 6, 8, 7))))
+        issymmetric += int(not np.allclose(trbt, np.transpose(trbt, (0, 2, 1, 3, 5, 4, 6, 7, 8))))
+        issymmetric += int(not np.allclose(trbt, np.transpose(trbt, (0, 2, 1, 3, 4, 5, 6, 8, 7))))
+        issymmetric += int(not np.allclose(trbt, np.transpose(trbt, (0, 2, 1, 3, 5, 4, 6, 8, 7))))
+        issymmetric += int(not np.allclose(trbt, np.transpose(trbt, (0, 1, 2, 3, 5, 4, 6, 8, 7))))
+        return issymmetric
+      issymmetric += do_issymmetric(nbt, issymmetric)
+      nbt_perm = np.transpose(nbt, (3, 4, 5, 0, 1, 2, 6, 7, 8))
+      issymmetric += do_issymmetric(nbt_perm, issymmetric)
+      nbt_perm = np.transpose(nbt, (3, 4, 5, 6, 7, 8, 0, 1, 2))
+      issymmetric += do_issymmetric(nbt_perm, issymmetric)
+      nbt_perm = np.transpose(nbt, (6, 7, 8, 3, 4, 5, 0, 1, 2))
+      issymmetric += do_issymmetric(nbt_perm, issymmetric)
+      nbt_perm = np.transpose(nbt, (0, 1, 2, 6, 7, 8, 3, 4, 5))
+      issymmetric += do_issymmetric(nbt_perm, issymmetric)
+      nbt_perm = np.transpose(nbt, (6, 7, 8, 0, 1, 2, 3, 4, 5))
+      issymmetric += do_issymmetric(nbt_perm, issymmetric)
 
     return issymmetric == 0
 
@@ -158,10 +180,6 @@ def tbt2op(tbt):
 
 
 
-
-
-
-
 def unperm_tbt2op(tbt):
     """
     convert unpermuted two-body-tensor to FermionOperator. The ordering convention of qubits is such that an element (i, j, p, r, q, s) of the tensor will be mapped to the coefficient
@@ -191,3 +209,44 @@ def unperm_tbt2op(tbt):
                 coeff = tbt[i,j,p,r,q,s]
                 op += FermionOperator(term, coeff)
     return op
+
+
+
+
+
+
+
+
+
+
+
+
+
+def symmetrize_trbt(trbt):
+  """
+  Symmetrize a three body tensor to have the 48 fold symmetry.
+  
+  Parameters
+  ----------
+  trbt : np.ndarray
+      A three body tensor of shape (i, p, q, j, r, s, k, t, u).
+  
+  Returns
+  -------
+  np.ndarray
+      A symmetrized three body tensor of shape (i, p, q, j, r, s, k, t, u).
+  """
+
+  sym_tbt = np.zeros_like(trbt)
+
+  M = [0, 3, 6]
+  Mperms = list(permutations(M, 3))
+  Ml = [(0, 1, 2), (0, 2, 1)]
+  for ms in Mperms:
+    for ml1 in Ml:
+      for ml2 in Ml:
+        for ml3 in Ml:
+          perm_axes = tuple(np.add(ml1, ms[0])) + tuple(np.add(ml2, ms[1])) + tuple(np.add(ml3, ms[2]))
+          sym_tbt += np.transpose(trbt, perm_axes)
+  sym_tbt /= 48
+  return sym_tbt
