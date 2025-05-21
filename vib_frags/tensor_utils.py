@@ -153,7 +153,7 @@ def tbt2op(tbt):
         tbt (np.array): two-body-tensor
 
     Returns:
-        FermionOperator: FermionOperator corresponding to the input chemist ordered two-body-tensor
+        FermionOperator: Chemist ordered FermionOperator corresponding to the input two-body-tensor
     """
     nmodes = tbt.shape[0]
 
@@ -183,13 +183,13 @@ def tbt2op(tbt):
 def unperm_tbt2op(tbt):
     """
     convert unpermuted two-body-tensor to FermionOperator. The ordering convention of qubits is such that an element (i, j, p, r, q, s) of the tensor will be mapped to the coefficient
-    of the FermionOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodes + p, Q = i*nmodes + q, R = j*nmodes + r, S = j*nmodes + s.
+    of the FermionOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, S = j*nmodals + s.
 
     Args:
         tbt (np.array): two-body-tensor
 
     Returns:
-        FermionOperator: FermionOperator corresponding to the input chemist ordered two-body-tensor
+        FermionOperator: Chemist ordered FermionOperator corresponding to the input two-body-tensor
     """
     nmodes = tbt.shape[0]
 
@@ -250,3 +250,96 @@ def symmetrize_trbt(trbt):
           sym_tbt += np.transpose(trbt, perm_axes)
   sym_tbt /= 48
   return sym_tbt
+
+
+
+
+
+
+
+
+
+
+def trbt2op(trbt):
+    """
+    convert chemist ordered three-body-tensor to FermionOperator. The ordering convention of qubits is such that 
+    an element (i, p, q, j, r, s, k, t, u) of the tensor will be mapped to the coefficient of the FermionOperator 
+    term ((P,1), (Q,0), (R,1), (S,0), (T, 1), (U, 0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, 
+    S = j*nmodals + s, T = k*nmodals + t, U = k*nmodals + u.
+
+    Args:
+        trbt (np.array): three-body-tensor
+
+    Returns:
+        FermionOperator: Chemist ordered FermionOperator corresponding to the input three-body-tensor
+    """
+    nmodes = trbt.shape[0]
+
+    op = FermionOperator()
+    nmodals = trbt.shape[-1]
+    for i in range(nmodes):
+      for j in range(nmodes):
+        for k in range(nmodes):
+          for p in range(nmodals):
+            P = i * nmodals + p
+            for q in range(nmodals):
+              Q = i * nmodals + q
+              for r in range (nmodals):
+                R = j * nmodals + r
+                for s in range (nmodals):
+                  S = j * nmodals + s
+                  for t in range (nmodals):
+                    T = k * nmodals + t
+                    for u in range (nmodals):
+                      U = k * nmodals + u
+                      coeff = trbt[i,p,q,j,r,s,k,t,u]
+                      if coeff != 0:
+                        term = ((P,1),(Q,0), (R,1),(S,0), (T, 1), (U, 0))
+                        op += FermionOperator(term, coeff)
+    return op
+
+
+
+
+
+
+
+
+
+def unperm_trbt2op(trbt):
+    """
+    convert unpermuted three-body-tensor to FermionOperator. The ordering convention of qubits is such that 
+    an element (i, j, k, p, r, t, q, s, u) of the tensor will be mapped to the coefficient of the FermionOperator 
+    term ((P,1), (Q,0), (R,1), (S,0), (T, 1), (U, 0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, 
+    S = j*nmodals + s, T = k*nmodals + t, U = k*nmodals + u.
+
+    Args:
+        trbt (np.array): three-body-tensor
+
+    Returns:
+        FermionOperator: Chemist ordered FermionOperator corresponding to the input three-body-tensor
+    """
+    nmodes = trbt.shape[0]
+
+    op = FermionOperator()
+    nmodals = trbt.shape[-1]
+    for i in range(nmodes):
+      for j in range(nmodes):
+        for k in range(nmodes):
+          for p in range(nmodals):
+            P = i * nmodals + p
+            for q in range(nmodals):
+              Q = i * nmodals + q
+              for r in range (nmodals):
+                R = j * nmodals + r
+                for s in range (nmodals):
+                  S = j * nmodals + s
+                  for t in range (nmodals):
+                    T = k * nmodals + t
+                    for u in range (nmodals):
+                      U = k * nmodals + u
+                      coeff = trbt[i,j,k,p,r,t,q,s,u]
+                      if coeff != 0:
+                        term = ((P,1),(Q,0), (R,1),(S,0), (T, 1), (U, 0))
+                        op += FermionOperator(term, coeff)
+    return op
