@@ -1,7 +1,7 @@
 
 import numpy as np
 from copy import copy
-from openfermion import FermionOperator
+from openfermion import BosonOperator, BosonOperator
 from itertools import permutations
 
 
@@ -146,18 +146,18 @@ def symmetrize_tbt(tbt):
 
 def tbt2op(tbt):
     """
-    convert two-body-tensor to FermionOperator. The ordering convention of qubits is such that an element (i, p, q, j, r, s) of the tensor will be mapped to the coefficient
-    of the FermionOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodes + p, Q = i*nmodes + q, R = j*nmodes + r, S = j*nmodes + s.
+    convert two-body-tensor to BosonOperator. The ordering convention of qubits is such that an element (i, p, q, j, r, s) of the tensor will be mapped to the coefficient
+    of the BosonOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodes + p, Q = i*nmodes + q, R = j*nmodes + r, S = j*nmodes + s.
 
     Args:
         tbt (np.array): two-body-tensor
 
     Returns:
-        FermionOperator: Chemist ordered FermionOperator corresponding to the input two-body-tensor
+        BosonOperator: Chemist ordered BosonOperator corresponding to the input two-body-tensor
     """
     nmodes = tbt.shape[0]
 
-    op = FermionOperator()
+    op = BosonOperator()
     nmodals = tbt.shape[2]
     for i in range(nmodes):
       for j in range(nmodes):
@@ -171,7 +171,7 @@ def tbt2op(tbt):
                 S = j * nmodals + s
                 term = ((P,1),(Q,0), (R,1),(S,0))
                 coeff = tbt[i,p,q,j,r,s]
-                op += FermionOperator(term, coeff)
+                op += BosonOperator(term, coeff)
     return op
 
 
@@ -182,18 +182,18 @@ def tbt2op(tbt):
 
 def unperm_tbt2op(tbt):
     """
-    convert unpermuted two-body-tensor to FermionOperator. The ordering convention of qubits is such that an element (i, j, p, r, q, s) of the tensor will be mapped to the coefficient
-    of the FermionOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, S = j*nmodals + s.
+    convert unpermuted two-body-tensor to BosonOperator. The ordering convention of qubits is such that an element (i, j, p, r, q, s) of the tensor will be mapped to the coefficient
+    of the BosonOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, S = j*nmodals + s.
 
     Args:
         tbt (np.array): two-body-tensor
 
     Returns:
-        FermionOperator: Chemist ordered FermionOperator corresponding to the input two-body-tensor
+        BosonOperator: Chemist ordered BosonOperator corresponding to the input two-body-tensor
     """
     nmodes = tbt.shape[0]
 
-    op = FermionOperator()
+    op = BosonOperator()
     nmodals = tbt.shape[2]
     for i in range(nmodes):
       for j in range(nmodes):
@@ -207,7 +207,7 @@ def unperm_tbt2op(tbt):
                 S = j * nmodals + s
                 term = ((P,1),(Q,0), (R,1),(S,0))
                 coeff = tbt[i,j,p,r,q,s]
-                op += FermionOperator(term, coeff)
+                op += BosonOperator(term, coeff)
     return op
 
 
@@ -262,8 +262,8 @@ def symmetrize_trbt(trbt):
 
 def trbt2op(trbt):
     """
-    convert chemist ordered three-body-tensor to FermionOperator. The ordering convention of qubits is such that 
-    an element (i, p, q, j, r, s, k, t, u) of the tensor will be mapped to the coefficient of the FermionOperator 
+    convert chemist ordered three-body-tensor to BosonOperator. The ordering convention of qubits is such that 
+    an element (i, p, q, j, r, s, k, t, u) of the tensor will be mapped to the coefficient of the BosonOperator 
     term ((P,1), (Q,0), (R,1), (S,0), (T, 1), (U, 0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, 
     S = j*nmodals + s, T = k*nmodals + t, U = k*nmodals + u.
 
@@ -271,11 +271,11 @@ def trbt2op(trbt):
         trbt (np.array): three-body-tensor
 
     Returns:
-        FermionOperator: Chemist ordered FermionOperator corresponding to the input three-body-tensor
+        BosonOperator: Chemist ordered BosonOperator corresponding to the input three-body-tensor
     """
     nmodes = trbt.shape[0]
 
-    op = FermionOperator()
+    op = BosonOperator()
     nmodals = trbt.shape[-1]
     for i in range(nmodes):
       for j in range(nmodes):
@@ -295,7 +295,7 @@ def trbt2op(trbt):
                       coeff = trbt[i,p,q,j,r,s,k,t,u]
                       if coeff != 0:
                         term = ((P,1),(Q,0), (R,1),(S,0), (T, 1), (U, 0))
-                        op += FermionOperator(term, coeff)
+                        op += BosonOperator(term, coeff)
     return op
 
 
@@ -308,8 +308,8 @@ def trbt2op(trbt):
 
 def unperm_trbt2op(trbt):
     """
-    convert unpermuted three-body-tensor to FermionOperator. The ordering convention of qubits is such that 
-    an element (i, j, k, p, r, t, q, s, u) of the tensor will be mapped to the coefficient of the FermionOperator 
+    convert unpermuted three-body-tensor to BosonOperator. The ordering convention of qubits is such that 
+    an element (i, j, k, p, r, t, q, s, u) of the tensor will be mapped to the coefficient of the BosonOperator 
     term ((P,1), (Q,0), (R,1), (S,0), (T, 1), (U, 0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, 
     S = j*nmodals + s, T = k*nmodals + t, U = k*nmodals + u.
 
@@ -317,11 +317,11 @@ def unperm_trbt2op(trbt):
         trbt (np.array): three-body-tensor
 
     Returns:
-        FermionOperator: Chemist ordered FermionOperator corresponding to the input three-body-tensor
+        BosonOperator: Chemist ordered BosonOperator corresponding to the input three-body-tensor
     """
     nmodes = trbt.shape[0]
 
-    op = FermionOperator()
+    op = BosonOperator()
     nmodals = trbt.shape[-1]
     for i in range(nmodes):
       for j in range(nmodes):
@@ -341,5 +341,5 @@ def unperm_trbt2op(trbt):
                       coeff = trbt[i,j,k,p,r,t,q,s,u]
                       if coeff != 0:
                         term = ((P,1),(Q,0), (R,1),(S,0), (T, 1), (U, 0))
-                        op += FermionOperator(term, coeff)
+                        op += BosonOperator(term, coeff)
     return op
