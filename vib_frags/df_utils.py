@@ -147,7 +147,7 @@ def get_DF_tbts(tbt, cutoff = 1e-5, force_sym = False):
 
   print (len(SF_es), " fragments found with eigenvalues greater than ", cutoff)
   for h in range(len(SF_es)):
-    coeff_mat = DF_e_ten[h, :, :]                         #Extract the coefficients of the i'th fragment
+    coeff_mat = DF_e_ten[h, :, :]                         #Extract the coefficients of the h'th fragment
     u = orbrot_ten[h, :, :, :]                            #Extract the orbital rotation matrix of the h'th fragment for all modes
     frag_ten = contract('ik,jl,ipk,iqk,jrl,jsl -> ipqjrs', coeff_mat, coeff_mat, u, u, u, u)
     frag_ten *= SF_es[h]                                  #Multiply the fragment with the eigenvalues of the first factorization
