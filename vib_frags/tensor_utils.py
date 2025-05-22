@@ -124,20 +124,7 @@ def symmetrize_tbt(tbt):
   np.ndarray
       A symmetrized two body tensor of shape (i, p, q, j, r, s).
   """
-  tbt_copy = copy(tbt)
-
-  tbt_copy = (
-              tbt_copy 
-              + np.transpose(tbt_copy, (0, 2, 1, 3, 4, 5))
-              + np.transpose(tbt_copy, (0, 1, 2, 3, 5, 4))
-              + np.transpose(tbt_copy, (0, 2, 1, 3, 5, 4))
-              + np.transpose(tbt_copy, (3, 4, 5, 0, 1, 2))
-              + np.transpose(tbt_copy, (3, 5, 4, 0, 1, 2))
-              + np.transpose(tbt_copy, (3, 4, 5, 0, 2, 1))
-              + np.transpose(tbt_copy, (3, 5, 4, 0, 2, 1))
-              )/8
-
-  return tbt_copy
+  return (tbt + np.transpose(tbt, (3, 4, 5, 0, 1, 2)))/2
 
 
 
@@ -240,15 +227,12 @@ def symmetrize_trbt(trbt):
   sym_tbt = np.zeros_like(trbt)
 
   M = [0, 3, 6]
-  Mperms = list(permutations(M, 3))
-  Ml = [(0, 1, 2), (0, 2, 1)]
+  Mperms = list(permutations(M, 3))           #All possible sequence of mode indices
+  mls = (0, 1, 2)
   for ms in Mperms:
-    for ml1 in Ml:
-      for ml2 in Ml:
-        for ml3 in Ml:
-          perm_axes = tuple(np.add(ml1, ms[0])) + tuple(np.add(ml2, ms[1])) + tuple(np.add(ml3, ms[2]))
-          sym_tbt += np.transpose(trbt, perm_axes)
-  sym_tbt /= 48
+    perm_axes = tuple(np.add(mls, ms[0])) + tuple(np.add(mls, ms[1])) + tuple(np.add(mls, ms[2]))
+    sym_tbt += np.transpose(trbt, perm_axes)
+  sym_tbt /= 6
   return sym_tbt
 
 
