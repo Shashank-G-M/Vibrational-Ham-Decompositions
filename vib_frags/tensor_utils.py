@@ -110,7 +110,7 @@ def check_symmetry(nbt):
 
 
 
-def symmetrize_tbt(tbt):
+def symmetrize_tbt(tbt, force_sym = False):
   """
   Symmetrize a two body tensor to have the eight fold symmetry.
   
@@ -118,13 +118,31 @@ def symmetrize_tbt(tbt):
   ----------
   tbt : np.ndarray
       A two body tensor of shape (i, p, q, j, r, s).
+  force_sym : bool
+      If True, along with composite mode+modal index swapping symmetry, other symmetries are also enforced.
+      This might be needed when dealing with small numbers and numerical instabilities.
+      Default is False.
   
   Returns
   -------
   np.ndarray
       A symmetrized two body tensor of shape (i, p, q, j, r, s).
   """
-  return (tbt + np.transpose(tbt, (3, 4, 5, 0, 1, 2)))/2
+  if force_sym == True:
+    tbt_new = (
+                tbt 
+                + np.transpose(tbt, (0, 2, 1, 3, 4, 5))
+                + np.transpose(tbt, (0, 1, 2, 3, 5, 4))
+                + np.transpose(tbt, (0, 2, 1, 3, 5, 4))
+                + np.transpose(tbt, (3, 4, 5, 0, 1, 2))
+                + np.transpose(tbt, (3, 5, 4, 0, 1, 2))
+                + np.transpose(tbt, (3, 4, 5, 0, 2, 1))
+                + np.transpose(tbt, (3, 5, 4, 0, 2, 1))
+                )/8
+  else:
+    tbt_new = (tbt + np.transpose(tbt, (3, 4, 5, 0, 1, 2)))/2
+
+  return tbt_new
 
 
 
@@ -209,7 +227,7 @@ def unperm_tbt2op(tbt):
 
 
 
-def symmetrize_trbt(trbt):
+def symmetrize_trbt(trbt, force_sym = False):
   """
   Symmetrize a three body tensor to have the 48 fold symmetry.
   
@@ -217,7 +235,11 @@ def symmetrize_trbt(trbt):
   ----------
   trbt : np.ndarray
       A three body tensor of shape (i, p, q, j, r, s, k, t, u).
-  
+  force_sym : bool
+      If True, along with composite mode+modal index swapping symmetry, other symmetries are also enforced.
+      This might be needed when dealing with small numbers and numerical instabilities.
+      Default is False.
+      
   Returns
   -------
   np.ndarray
@@ -227,12 +249,23 @@ def symmetrize_trbt(trbt):
   sym_tbt = np.zeros_like(trbt)
 
   M = [0, 3, 6]
-  Mperms = list(permutations(M, 3))           #All possible sequence of mode indices
-  mls = (0, 1, 2)
-  for ms in Mperms:
-    perm_axes = tuple(np.add(mls, ms[0])) + tuple(np.add(mls, ms[1])) + tuple(np.add(mls, ms[2]))
-    sym_tbt += np.transpose(trbt, perm_axes)
-  sym_tbt /= 6
+  Mperms = list(permutations(M, 3))
+  if force_sym == True:
+    Ml = [(0, 1, 2), (0, 2, 1)]
+    for ms in Mperms:
+      for ml1 in Ml:
+        for ml2 in Ml:
+          for ml3 in Ml:
+            perm_axes = tuple(np.add(ml1, ms[0])) + tuple(np.add(ml2, ms[1])) + tuple(np.add(ml3, ms[2]))
+            sym_tbt += np.transpose(trbt, perm_axes)
+    sym_tbt /= 48
+  else:
+    mls = (0, 1, 2)
+    for ms in Mperms:
+      perm_axes = tuple(np.add(mls, ms[0])) + tuple(np.add(mls, ms[1])) + tuple(np.add(mls, ms[2]))
+      sym_tbt += np.transpose(trbt, perm_axes)
+    sym_tbt /= 6
+  
   return sym_tbt
 
 
