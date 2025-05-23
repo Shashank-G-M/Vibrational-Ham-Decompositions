@@ -68,9 +68,9 @@ def DF_terms(tbt, cutoff=1e-10, force_sym = False):
     np.ndarray (nfrags,)
         Eigenvalues from first factorization sorted according to their magnitude.
     np.ndarray (nfrags, nmodes, nmodals)
-        Eigenvalues from second factorization for each fragment and node sorted according to their magnitude.
+        Eigenvalues from second factorization for each fragment and mode sorted according to their magnitude.
     np.ndarray (nfrags, nmodes, nmodals, nmodals)
-        Orbital rotation matrix for each node of each fragment.
+        Orbital rotation matrix for each mode of each fragment.
         The first axis denotes the fragment index.
         The second axis denotes the mode index.
         The third and fourth axis denote the element of an orbital rotation matrix.
