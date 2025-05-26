@@ -126,7 +126,7 @@ def DF_terms(tbt, cutoff=1e-10, force_sym = False):
 
 
 
-def get_DF_tbts(tbt, cutoff = 1e-5, force_sym = False):
+def get_DF_tbts(tbt, cutoff = 1e-5, force_sym = True):
   """
   Perform double factorization and return a list of two body tensors for each fragment.
 
@@ -136,6 +136,9 @@ def get_DF_tbts(tbt, cutoff = 1e-5, force_sym = False):
       A two body tensor of shape (i, p, q, j, r, s).
   cutoff : float
       cutoff for truncation of fragments. Default is 1e-5.
+  force_sym : bool
+      If True, all relevant symmetries are enforced in the intermediate tensors. This is done to avoid numerical instabilities.
+      Default is True.
   
   Returns
   -------
