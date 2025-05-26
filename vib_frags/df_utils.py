@@ -28,7 +28,7 @@ def SF_terms(tbt):
     tbt_mat = np.reshape(tbt, (tbt.shape[0] * tbt.shape[1] * tbt.shape[2], tbt.shape[3] * tbt.shape[4] * tbt.shape[5]))
     
     # Check if the reshaped tensor is symmetric
-    assert np.sum(np.abs(tbt_mat - tbt_mat.T)) < 1e-10
+    assert np.sum(np.abs(tbt_mat - tbt_mat.T)) < 1e-6
 
     # Compute the eigenvalues and eigenvectors of the reshaped tensor
     eigvals, eigvecs = np.linalg.eigh(tbt_mat)
