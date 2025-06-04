@@ -5,7 +5,7 @@
 
 import numpy as np
 from . import tensor_utils as tu
-from . import df_utils as df
+from . import df_utils as dfu
 from opt_einsum import contract
 from numpy.linalg import svd
 
@@ -14,7 +14,7 @@ from numpy.linalg import svd
 
 
 
-def TF_terms(trbt, cutoff=1e-10, force_sym = False):
+def TF_terms(trbt, svd_cutoff=1e-5, df_cutoff=1e-8, force_sym = False):
   """
   Computes triple factorization of a three body tensor. Returns six objects that are needed to reconstruct a TF fragment.
   Error will be raised if the input trbt does not have 48 fold symmetry.
@@ -23,8 +23,10 @@ def TF_terms(trbt, cutoff=1e-10, force_sym = False):
   ----------
   trbt : np.ndarray
       A three body tensor of shape (i, p, q, j, r, s, k, t, u).
-  cutoff : float
-      cutoff for truncation of fragments. Default is 1e-10.
+  svd_cutoff : float
+      cutoff for truncation of fragments after the first factorization i.e. SVD. Default is 1e-5.
+  df_cutoff : float
+      cutoff for truncating double factorized fragments after SVD. Default is 1e-8.
   force_sym : bool
       If True, all relevant symmetries are enforced in the intermediate tensors. This is done to avoid numerical instabilities.
       Default is True.
@@ -67,7 +69,7 @@ def TF_terms(trbt, cutoff=1e-10, force_sym = False):
   right_svs = right_svsT.T                                            
 
   #Truncate fragments
-  lrg_frag_idx = np.where(np.abs(sing_vals) > cutoff)[0]              #Get the indices of the fragments with eigenvalues greater than the cutoff
+  lrg_frag_idx = np.where(np.abs(sing_vals) > svd_cutoff)[0]              #Get the indices of the fragments with eigenvalues greater than the svd_cutoff
   sing_vals = sing_vals[lrg_frag_idx]                            
   left_svs = left_svs[:, lrg_frag_idx]
   right_svs = right_svs[:, lrg_frag_idx]
@@ -120,13 +122,24 @@ def TF_terms(trbt, cutoff=1e-10, force_sym = False):
       output2[a, i, :] = Chi_i                            #Store the eigenvalues in the tensor
       output3[a, i, :, :] = Bi                            #Store the eigenvectors = orbital rotation matrix in the tensor
 
+
     #Check tbt symmetry
     print (tu.check_symmetry(v))
     if force_sym:
       v = tu.symmetrize_tbt(v, force_sym = True)
 
+    # #Reduce the df_cutoff when singular value is larger than 1
+    # if np.abs(sing_vals[a]) > 1:
+    #   df_cutoff_new = df_cutoff / np.abs(sing_vals[a])
+    # else:
+    #   df_cutoff_new = df_cutoff * np.abs(sing_vals[a])
+
+    df_cutoff_new = df_cutoff / np.abs(sing_vals[a])
+
     #Factorizing the two-body operator
-    output4_a, output5_a, output6_a = df.DF_terms(v, cutoff=cutoff, force_sym = force_sym)
+    output4_a, output5_a, output6_a = dfu.DF_terms(v, cutoff=df_cutoff_new, force_sym = force_sym)
+    tbts_a = dfu.get_DF_tbts(v, cutoff = df_cutoff_new, force_sym = True)
+    # print ("Error in tbt fagmentation = ", output1[a]*np.sum(np.abs(v - sum(tbts_a))))
 
     #Store the results in a list
     output4.append(output4_a)
@@ -136,10 +149,67 @@ def TF_terms(trbt, cutoff=1e-10, force_sym = False):
   return output1, output2, output3, output4, output5, output6
 
 
+
+
+
+
+
+
+
+
+def get_TF_trbts(trbt, svd_cutoff = 1e-5, df_cutoff = 1e-8, force_sym = True):
+  """
+  Perform triple factorization and return a list of three body tensors of the TF fragments.
+
+  Parameters
+  ----------
+  trbt : np.ndarray
+      A three body tensor of shape (i, p, q, j, r, s, k, t, u).
+  svd_cutoff : float
+      svd_cutoff for truncation of fragments. Default is 1e-5.
+  df_cutoff : float
+      df_cutoff for truncating double factorized fragments after SVD. Default is 1e-8.
+  force_sym : bool
+      If True, all relevant symmetries are enforced in the intermediate tensors. This is done to avoid numerical instabilities.
+      Default is True.
   
+  Returns
+  -------
+  list of np.ndarray
+      A list of three body tensors of the TF fragments.
+  """
 
+  sigmas, Chis, Bs, lambdas, xis, Xis = TF_terms(trbt, svd_cutoff, df_cutoff, force_sym)
+  frag_tens = []                                          #List to store fragment tensors
 
+  frags_len = 0
+  imp_idxs = []                                       #List to store the address of the fragments with coefficients greater than the svd_cutoff
+  imp_coeffs = []
+  for i in range (len(sigmas)):
+    for j in range (len(lambdas[i])):
+      if np.abs(sigmas[i]*lambdas[i][j]) > df_cutoff:  #Check if the coefficient is greater than the svd_cutoff
+        frags_len += 1
+        imp_idxs.append((i, j))
+        imp_coeffs.append(sigmas[i]*lambdas[i][j])
 
+  srt_idxs = np.argsort(np.abs(imp_coeffs))[::-1]
+  imp_coeffs = np.array(imp_coeffs)[srt_idxs]
+  imp_idxs = list(np.array(imp_idxs)[srt_idxs])
 
+  # print (frags_len, " fragments found with coefficients greater than ", df_cutoff) 
 
+  for a, h in imp_idxs:
+    sigma_a = sigmas[a]                                #Extract the singular values from first factorization
+    Chi_a = Chis[a, :, :]                              #Extract the eigenvalues of the factorization of the one-body operator
+    B_a = Bs[a, :, :, :]                               #Extract the orbital rotation matrix from the factorization of the one-body operator
+    lambda_a_h = lambdas[a][h]                         #Extract the eigenvalues from the factorization of the two-body operator
+    xi_a_h = xis[a][h, :, :]                           #Extract the eigenvalues from the second factorization of the two-body operator
+    Xi_a_h = Xis[a][h, :, :, :]                        #Extract the orbital rotation matrix from the second factorization of the two-body operator
 
+    frag_ten = contract('ix, ipx, iqx, jy, jry, jsy, kz, ktz, kuz -> ipqjrsktu', Chi_a, B_a, B_a, xi_a_h, Xi_a_h, Xi_a_h, xi_a_h, Xi_a_h, Xi_a_h)
+    frag_ten *= sigma_a * lambda_a_h                    #Multiply the fragment with the singular values/eigenvalues from the first two factorizations
+    if np.sum(np.abs(frag_ten)) > 1:
+      frag_tens.append(frag_ten)
+  # print ('The fragments one norm = ', sum(np.abs(imp_coeffs)))
+
+  return frag_tens
