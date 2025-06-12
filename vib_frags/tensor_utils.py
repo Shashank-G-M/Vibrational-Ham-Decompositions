@@ -1,9 +1,11 @@
-
+import scipy as sp
 import numpy as np
 from copy import copy
-from openfermion import QubitOperator
+from openfermion import QubitOperator, get_sparse_operator
 from itertools import permutations
-from . qubit_utils import sigdag, sig, Epq_mat
+from . qubit_utils import sigdag, sig, Epq_mat, Zp_mat
+
+
 
 
 
@@ -405,19 +407,6 @@ def unperm_trbt2op(trbt):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 def obt2_proj_mat(obt):
   '''
   Map one-body-tensor to scipy sparse matrix representation of corresponding one-body opeartor in the subspace of one excitation per mode.
@@ -582,3 +571,89 @@ def unperm_trbt2_proj_mat(trbt):
                       if coeff != 0:
                         op += coeff * Epq_mat(i, p, q, nmodals, nmodes) * Epq_mat(j, r, s, nmodals, nmodes) * Epq_mat(k, t, u, nmodals, nmodes)
     return op
+
+
+
+
+
+
+
+
+
+
+
+
+
+def O_2_sarray(O, nmodals, nmodes):
+    """
+    Convert an orthogonal matrix O to a scipy sparse array. Ensure that O[i] belongs to SO(n) i.e. its determinant is +1 and -1.
+
+    Parameters
+    ----------
+    O : np.ndarray
+        Orthogonal matrix (in SO(n)) of shape (nmodes, nmodals, nmodals).
+    nmodals : int
+        Number of modals.
+    nmodes : int
+        Number of modes.
+
+    Returns
+    -------
+    sp.sparse.csc_matrix
+        Full space unitary as scipy sparse array corresponding to the orthogonal matrix O
+    """
+    kappa_hat = QO().zero()
+    for i in range (nmodes):
+        kappa = sp.linalg.logm(O[i])
+        for p in range (nmodals):
+            p_i = i*nmodals + p
+            for q in range (nmodals):
+                q_i = i*nmodals + q
+                kappa_hat += kappa[p, q]*sigdag(p_i)*sig(q_i)
+    kappa_hat_sarray = get_sparse_operator(kappa_hat, n_qubits=nmodes*nmodals)
+    U = sp.sparse.linalg.expm(kappa_hat_sarray)
+    return sp.sparse.csc_matrix(U)
+
+
+
+
+
+
+
+
+
+
+def O_2_proj_mat(O, nmodals, nmodes):
+    """
+    Get the sparse matrix representation of the opeartor corresnpoding to an orthogonal matrix O in the projected subspace of one excitation per mode.
+    Ensure that O[i] belongs to SO(n) i.e. its determinant is +1 and -1.
+
+    Parameters
+    ----------
+    O : np.ndarray
+        Orthogonal matrix (in SO(n)) of shape (nmodes, nmodals, nmodals).
+    nmodals : int
+        Number of modals.
+    nmodes : int
+        Number of modes.
+
+    Returns
+    -------
+    sp.sparse.csc_matrix
+        Sparse matrix representation of the opeartor corresnpoding to an orthogonal matrix O in the projected subspace of one excitation per mode.
+    """
+    kappa_mat = 0
+    for i in range (nmodes):
+        kappa = np.real(sp.linalg.logm(O[i]))
+        for p in range (nmodals):
+            for q in range (nmodals):
+                kappa_mat += kappa[p, q]*Epq_mat(i, p, q, nmodals, nmodes)
+    U = sp.sparse.linalg.expm(kappa_mat)
+    return sp.sparse.csc_matrix(U)
+
+
+
+
+
+
+
