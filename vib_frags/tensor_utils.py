@@ -584,14 +584,15 @@ def unperm_trbt2_proj_mat(trbt):
 
 
 
-def O_2_sarray(O, nmodals, nmodes):
+def SO_2_sarray(SO, nmodals, nmodes):
     """
-    Convert an orthogonal matrix O to a scipy sparse array. Ensure that O[i] belongs to SO(n) i.e. its determinant is +1 and -1.
+    Convert a special orthogonal matrix SO to a scipy sparse array. Ensure that SO[i] belongs to SO(n) i.e. its determinant is +1 and not -1.
+    To ensure this, if O[i] is an orthogonal matrix with det(O[i]) = -1, set O[i, :, -1] *= -1.
 
     Parameters
     ----------
-    O : np.ndarray
-        Orthogonal matrix (in SO(n)) of shape (nmodes, nmodals, nmodals).
+    SO : np.ndarray
+        Special orthogonal matrix of shape (nmodes, nmodals, nmodals).
     nmodals : int
         Number of modals.
     nmodes : int
@@ -602,9 +603,11 @@ def O_2_sarray(O, nmodals, nmodes):
     sp.sparse.csc_matrix
         Full space unitary as scipy sparse array corresponding to the orthogonal matrix O
     """
-    kappa_hat = QO().zero()
+    kappa_hat = QubitOperator()
     for i in range (nmodes):
-        kappa = sp.linalg.logm(O[i])
+        if np.linalg.det(SO[i]) < 0:
+           raise ValueError("Given orbital rotation tensor has a matrix that does not belong to SO(n). \nTo correct this, if O[i] is an orthogonal matrix with det(O[i]) = -1, set O[i, :, -1] *= -1.")
+        kappa = sp.linalg.logm(SO[i])
         for p in range (nmodals):
             p_i = i*nmodals + p
             for q in range (nmodals):
@@ -623,15 +626,15 @@ def O_2_sarray(O, nmodals, nmodes):
 
 
 
-def O_2_proj_mat(O, nmodals, nmodes):
+def SO_2_proj_mat(SO, nmodals, nmodes):
     """
-    Get the sparse matrix representation of the opeartor corresnpoding to an orthogonal matrix O in the projected subspace of one excitation per mode.
-    Ensure that O[i] belongs to SO(n) i.e. its determinant is +1 and -1.
+    Get the sparse matrix representation of the opeartor corresnpoding to a special orthogonal matrix O, in the projected subspace of one excitation per mode.
+    To ensure this, if O[i] is an orthogonal matrix with det(O[i]) = -1, set O[i, :, -1] *= -1.
 
     Parameters
     ----------
-    O : np.ndarray
-        Orthogonal matrix (in SO(n)) of shape (nmodes, nmodals, nmodals).
+    SO : np.ndarray
+        Special orthogonal matrix of shape (nmodes, nmodals, nmodals).
     nmodals : int
         Number of modals.
     nmodes : int
@@ -644,7 +647,9 @@ def O_2_proj_mat(O, nmodals, nmodes):
     """
     kappa_mat = 0
     for i in range (nmodes):
-        kappa = np.real(sp.linalg.logm(O[i]))
+        if np.linalg.det(SO[i]) < 0:
+           raise ValueError("Given orbital rotation tensor has a matrix that does not belong to SO(n). \nTo correct this, if O[i] is an orthogonal matrix with det(O[i]) = -1, set O[i, :, -1] *= -1.")
+        kappa = np.real(sp.linalg.logm(SO[i]))
         for p in range (nmodals):
             for q in range (nmodals):
                 kappa_mat += kappa[p, q]*Epq_mat(i, p, q, nmodals, nmodes)
@@ -711,7 +716,7 @@ def refcart_2_Qop(tensor):
                     for l in range(nmodals):
                         for m in range(nmodals):
                             for n in range(nmodals):
-                                coeff = tensor[i, l, l, j, m, m, k, n, n]d
+                                coeff = tensor[i, l, l, j, m, m, k, n, n]
                                 if coeff != 0:
                                     qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l} Z{j*nmodals + m} Z{k*nmodals + n}')
     else:
