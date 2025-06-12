@@ -70,13 +70,18 @@ def Epq_mat(i, p, q, nmodals, nmodes):
     if i >= nmodes:
         raise ValueError("i must be less than nmodes")
     
-    Epq = sp.sparse.csc_matrix(([1], ([p], [q])), shape=(nmodals, nmodals), dtype=int)
-    I_left = sp.sparse.eye(nmodals**i, format='csc', dtype=int)
-    I_right = sp.sparse.eye(nmodals**(nmodes-i-1), format='csc', dtype=int)
-    
-    Epq_full = sp.sparse.kron(I_left, Epq, format='csc')
-    Epq_full = sp.sparse.kron(Epq_full, I_right, format='csc')
-    
+    comm_idx = nmodals*np.arange(nmodals**i)
+    r = nmodals**(nmodes-i-1)                       #dimension of identity matrix to the right of Epiqi
+    base = np.arange(r)
+
+    p_offsets = (comm_idx + p)*r
+    rows = (base[None, :] + p_offsets[:, None]).ravel()
+    q_offsets = (comm_idx + q)*r
+    cols = (base[None, :] + q_offsets[:, None]).ravel()
+    data = np.ones(len(cols))
+
+    Epq_full = sp.sparse.coo_matrix((data, (rows, cols)), shape = (nmodals**nmodes, nmodals**nmodes), dtype=int).tocsc()    
+
     return Epq_full
 
 
@@ -112,12 +117,12 @@ def Zp_mat(i, p, nmodals, nmodes):
     
     data = np.ones(nmodals)
     data[p] = -1
-    Zp = sp.sparse.diags(data, offsets=0, format='csc', dtype=int)
-    I_left = sp.sparse.eye(nmodals**i, format='csc', dtype=int)
-    I_right = sp.sparse.eye(nmodals**(nmodes-i-1), format='csc', dtype=int)
     
-    Zp_full = sp.sparse.kron(I_left, Zp, format='csc')
-    Zp_full = sp.sparse.kron(Zp_full, I_right, format='csc')
+    r = nmodals**(nmodes-i-1)
+    data = np.repeat(data, r)
+    l = nmodals**i
+    data = np.tile(data, l)
+    Zp_full = sp.sparse.diags(data, format = 'csc', dtype=int)
     
     return Zp_full
 
