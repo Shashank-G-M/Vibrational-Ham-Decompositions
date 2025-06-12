@@ -657,3 +657,269 @@ def O_2_proj_mat(O, nmodals, nmodes):
 
 
 
+
+
+def refcart_2_Qop(tensor):
+    '''
+    Convert a coefficient tensor of obt, tbt or trbt cartans written in terms of reflections to qubit operator.
+
+    Parameters
+    ----------
+    tensor : np.ndarray
+        Coefficient tensor of tbt or trbt cartans written in terms of reflections. Accpeted dimensions an ordering of axes are as follows:
+        - For one-body tensor: (nmodes, nmodals, nmodals) or (nmodes, nmodals)
+        - For two-body tensor: (nmodes, nmodals, nmodals, nmodes, nmodals, nmodals)
+        - For three-body tensor: (nmodes, nmodals, nmodals, nmodes, nmodals, nmodals, nmodes, nmodals, nmodals)
+        If the tensors are of lower rank due to redunduncies, promote them to full rank and then pass them to the funciton.
+    Returns
+    -------
+    openfermion.QubitOperator
+        QubitOperator built from the coefficient tensor of tbt or trbt cartans written in terms of reflections.
+    '''
+    if tensor.ndim == 2:  # One-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        qubit_op = QubitOperator()
+        for i in range(nmodes):
+            for l in range(nmodals):
+                coeff = tensor[i, l]
+                if coeff != 0:
+                    qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l}')
+    elif tensor.ndim == 3:  # One-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        qubit_op = QubitOperator()
+        for i in range(nmodes):
+            for l in range(nmodals):
+                coeff = tensor[i, l, l]
+                if coeff != 0:
+                    qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l}')
+    elif tensor.ndim == 6:  # Two-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        qubit_op = QubitOperator()
+        for i in range(nmodes):
+            for j in range(i):
+                for l in range(nmodals):
+                    for m in range(nmodals):
+                        coeff = tensor[i, l, l, j, m, m]
+                        if coeff != 0:
+                            qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l} Z{j*nmodals + m}')
+    elif tensor.ndim == 9:  # Three-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        qubit_op = QubitOperator()
+        for i in range(nmodes):
+            for j in range(i):
+                for k in range(j):
+                    for l in range(nmodals):
+                        for m in range(nmodals):
+                            for n in range(nmodals):
+                                coeff = tensor[i, l, l, j, m, m, k, n, n]d
+                                if coeff != 0:
+                                    qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l} Z{j*nmodals + m} Z{k*nmodals + n}')
+    else:
+        raise ValueError("Input tensor must be either a onr-body tensor (2D or 3D), two-body tensor (6D) or a three-body tensor (9D).")
+    return qubit_op
+
+
+
+
+
+
+
+
+
+def unperm_refcart_2_Qop(tensor):
+    '''
+    Convert a coefficient tensor of obt, unpermuted tbt or unpermuted trbt cartans written in terms of reflections to qubit operator.
+
+    Parameters
+    ----------
+    tensor : np.ndarray
+        Coefficient tensor of tbt or trbt cartans written in terms of reflections. Accpeted dimensions an ordering of axes are as follows:
+        - For one-body tensor: (nmodes, nmodals, nmodals) or (nmodes, nmodals)
+        - For two-body tensor: (nmodes, nmodes, nmodals, nmodals, nmodals, nmodals)
+        - For three-body tensor: (nmodes, nmodes, nmodes, nmodals, nmodals, nmodals, nmodals, nmodals, nmodals)
+        If the tensors are of lower rank due to redunduncies, promote them to full rank and then pass them to the funciton.
+    Returns
+    -------
+    openfermion.QubitOperator
+        QubitOperator built from the coefficient tensor of tbt or trbt cartans written in terms of reflections.
+    '''
+    if tensor.ndim == 2:  # One-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        qubit_op = QubitOperator()
+        for i in range(nmodes):
+            for l in range(nmodals):
+                coeff = tensor[i, l]
+                if coeff != 0:
+                    qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l}')
+    elif tensor.ndim == 3:  # One-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        qubit_op = QubitOperator()
+        for i in range(nmodes):
+            for l in range(nmodals):
+                coeff = tensor[i, l, l]
+                if coeff != 0:
+                    qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l}')
+    elif tensor.ndim == 6:  # Two-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        qubit_op = QubitOperator()
+        for i in range(nmodes):
+            for j in range(i):
+                for l in range(nmodals):
+                    for m in range(nmodals):
+                        coeff = tensor[i, j, l, m, l, m]
+                        if coeff != 0:
+                            qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l} Z{j*nmodals + m}')
+    elif tensor.ndim == 9:  # Three-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        qubit_op = QubitOperator()
+        for i in range(nmodes):
+            for j in range(i):
+                for k in range(j):
+                    for l in range(nmodals):
+                        for m in range(nmodals):
+                            for n in range(nmodals):
+                                coeff = tensor[i, j, k, l, m, n, l, m, n]
+                                if coeff != 0:
+                                    qubit_op += coeff * QubitOperator(f'Z{i*nmodals + l} Z{j*nmodals + m} Z{k*nmodals + n}')
+    else:
+        raise ValueError("Input tensor must be either a onr-body tensor (2D or 3D), two-body tensor (6D) or a three-body tensor (9D).")
+    return qubit_op
+
+
+
+
+
+
+
+
+
+
+
+def refcart_2_proj_mat(tensor):
+    '''
+    Convert obt, tbt or trbt cartans assumed to be coeffients of reflections to sparse operator in the projected subspace of one excitation per mode.
+
+    Parameters
+    ----------
+    tensor : np.ndarray
+        Coefficient tensor of tbt or trbt cartans written in terms of reflections. Accpeted dimensions an ordering of axes are as follows:
+        - For one-body tensor: (nmodes, nmodals, nmodals) or (nmodes, nmodals)
+        - For two-body tensor: (nmodes, nmodals, nmodals, nmodes, nmodals, nmodals)
+        - For three-body tensor: (nmodes, nmodals, nmodals, nmodes, nmodals, nmodals, nmodes, nmodals, nmodals)
+        If the tensors are of lower rank due to redunduncies, promote them to full rank and then pass them to the funciton.
+    Returns
+    -------
+    sp.sparse.csc_matrix
+        Sparse array representing the operator constructed from reflection cartan tensor in the subsace of one excitation per mode.
+    '''
+    if tensor.ndim == 2:  # One-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        sparse_mat = 0
+        for i in range(nmodes):
+            for l in range(nmodals):
+                coeff = tensor[i, l]
+                if coeff != 0:
+                    sparse_mat += coeff * Zp_mat(i, l, nmodals, nmodes)
+    elif tensor.ndim == 3:  # One-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        sparse_mat = 0
+        for i in range(nmodes):
+            for l in range(nmodals):
+                coeff = tensor[i, l, l]
+                if coeff != 0:
+                    sparse_mat += coeff * Zp_mat(i, l, nmodals, nmodes)
+    elif tensor.ndim == 6:  # Two-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        sparse_mat = 0
+        for i in range(nmodes):
+            for j in range(i):
+                for l in range(nmodals):
+                    for m in range(nmodals):
+                        coeff = tensor[i, l, l, j, m, m]
+                        if coeff != 0:
+                            sparse_mat += coeff * Zp_mat(i, l, nmodals, nmodes) * Zp_mat(j, m, nmodals, nmodes)
+    elif tensor.ndim == 9:  # Three-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        sparse_mat = 0
+        for i in range(nmodes):
+            for j in range(i):
+                for k in range(j):
+                    for l in range(nmodals):
+                        for m in range(nmodals):
+                            for n in range(nmodals):
+                                coeff = tensor[i, l, l, j, m, m, k, n, n]
+                                if coeff != 0:
+                                    sparse_mat += coeff * Zp_mat(i, l, nmodals, nmodes) * Zp_mat(j, m, nmodals, nmodes) * Zp_mat(k, n, nmodals, nmodes)
+    else:
+        raise ValueError("Input tensor must be either a one-body tensor (2D or 3D), two-body tensor (6D) or a three-body tensor (9D).")
+    return sparse_mat
+
+
+
+
+
+
+
+
+
+
+
+
+def unperm_refcart_2_proj_mat(tensor):
+    '''
+    Convert obt, unpermuted tbt or unpermuted trbt cartans assumed to be coeffients of reflections to sparse operator in the projected subspace of one excitation per mode.
+
+    Parameters
+    ----------
+    tensor : np.ndarray
+        Coefficient tensor of tbt or trbt cartans written in terms of reflections. Accpeted dimensions an ordering of axes are as follows:
+        - For one-body tensor: (nmodes, nmodals, nmodals) or (nmodes, nmodals)
+        - For two-body tensor: (nmodes, nmodes, nmodals, nmodals, nmodals, nmodals)
+        - For three-body tensor: (nmodes, nmodes, nmodes, nmodals, nmodals, nmodals, nmodals, nmodals, nmodals)
+        If the tensors are of lower rank due to redunduncies, promote them to full rank and then pass them to the funciton.
+    Returns
+    -------
+    sp.sparse.csc_matrix
+        Sparse array representing the operator constructed from reflection cartan tensor in the subsace of one excitation per mode.
+    '''
+    if tensor.ndim == 2:  # One-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        sparse_mat = 0
+        for i in range(nmodes):
+            for l in range(nmodals):
+                coeff = tensor[i, l]
+                if coeff != 0:
+                    sparse_mat += coeff * Zp_mat(i, l, nmodals, nmodes)
+    elif tensor.ndim == 3:  # One-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        sparse_mat = 0
+        for i in range(nmodes):
+            for l in range(nmodals):
+                coeff = tensor[i, l, l]
+                if coeff != 0:
+                    sparse_mat += coeff * Zp_mat(i, l, nmodals, nmodes)
+    elif tensor.ndim == 6:  # Two-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        sparse_mat = 0
+        for i in range(nmodes):
+            for j in range(i):
+                for l in range(nmodals):
+                    for m in range(nmodals):
+                        coeff = tensor[i, j, l, m, l, m]
+                        if coeff != 0:
+                            sparse_mat += coeff * Zp_mat(i, l, nmodals, nmodes) * Zp_mat(j, m, nmodals, nmodes)
+    elif tensor.ndim == 9:  # Three-body tensor
+        nmodes, nmodals = tensor.shape[0], tensor.shape[-1]
+        sparse_mat = 0
+        for i in range(nmodes):
+            for j in range(i):
+                for k in range(j):
+                    for l in range(nmodals):
+                        for m in range(nmodals):
+                            for n in range(nmodals):
+                                coeff = tensor[i, j, k, l, m, n, l, m, n]
+                                if coeff != 0:
+                                    sparse_mat += coeff * Zp_mat(i, l, nmodals, nmodes) * Zp_mat(j, m, nmodals, nmodes) * Zp_mat(k, n, nmodals, nmodes)
+    else:
+        raise ValueError("Input tensor must be either a one-body tensor (2D or 3D), two-body tensor (6D) or a three-body tensor (9D).")
+    return sparse_mat
