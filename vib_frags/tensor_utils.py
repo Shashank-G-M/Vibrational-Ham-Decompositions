@@ -1,9 +1,9 @@
 
 import numpy as np
 from copy import copy
-from openfermion import BosonOperator, BosonOperator
+from openfermion import QubitOperator
 from itertools import permutations
-
+from . qubit_utils import sigdag, sig, Epq_mat
 
 
 
@@ -149,20 +149,55 @@ def symmetrize_tbt(tbt, force_sym = False):
 
 
 
+def obt2op(obt):
+  '''
+  convert one-body-tensor to QubitOperator. The ordering convention of qubits is such that an element (i, p, q) of the tensor will be mapped to the coefficient
+  of the QubitOperator term ((P,1), (Q,0)), where P = i*nmodals + p, Q = i*nmodals + q.
+
+  Parameters
+  ----------
+  obt: np.array
+    one-body tensor of shape (nmodes, nmodals, nmodals)  
+
+  Returns
+  -------
+  QubitOperator
+    Chemist ordered QubitOperator corresponding to the input one-body-tensor
+  '''
+  nmodes = obt.shape[0]
+  nmodals = obt.shape[-1]
+  op = QubitOperator()
+
+  for i in range (nmodes):
+    for p in range (nmodals):
+      P = i * nmodals + p
+      for q in range (nmodals):
+        Q = i * nmodals + q
+        coeff = obt[i,p,q]
+        if coeff != 0:
+          op += coeff * sigdag(P) * sig(Q)
+  return op
+
+
+
+
+
+
+
 def tbt2op(tbt):
     """
-    convert two-body-tensor to BosonOperator. The ordering convention of qubits is such that an element (i, p, q, j, r, s) of the tensor will be mapped to the coefficient
-    of the BosonOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodes + p, Q = i*nmodes + q, R = j*nmodes + r, S = j*nmodes + s.
+    convert two-body-tensor to QubitOperator. The ordering convention of qubits is such that an element (i, p, q, j, r, s) of the tensor will be mapped to the coefficient
+    of the QubitOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, S = j*nmodals + s.
 
     Args:
         tbt (np.array): two-body-tensor
 
     Returns:
-        BosonOperator: Chemist ordered BosonOperator corresponding to the input two-body-tensor
+        QubitOperator: Chemist ordered QubitOperator corresponding to the input two-body-tensor
     """
     nmodes = tbt.shape[0]
 
-    op = BosonOperator()
+    op = QubitOperator()
     nmodals = tbt.shape[2]
     for i in range(nmodes):
       for j in range(nmodes):
@@ -174,9 +209,9 @@ def tbt2op(tbt):
               R = j * nmodals + r
               for s in range (nmodals):
                 S = j * nmodals + s
-                term = ((P,1),(Q,0), (R,1),(S,0))
                 coeff = tbt[i,p,q,j,r,s]
-                op += BosonOperator(term, coeff)
+                if coeff != 0:
+                  op += coeff * sigdag(P) * sig(Q) * sigdag(R) * sig(S)
     return op
 
 
@@ -187,18 +222,18 @@ def tbt2op(tbt):
 
 def unperm_tbt2op(tbt):
     """
-    convert unpermuted two-body-tensor to BosonOperator. The ordering convention of qubits is such that an element (i, j, p, r, q, s) of the tensor will be mapped to the coefficient
-    of the BosonOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, S = j*nmodals + s.
+    convert unpermuted two-body-tensor to QubitOperator. The ordering convention of qubits is such that an element (i, j, p, r, q, s) of the tensor will be mapped to the coefficient
+    of the QubitOperator term ((P,1), (Q,0), (R,1), (S,0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, S = j*nmodals + s.
 
     Args:
         tbt (np.array): two-body-tensor
 
     Returns:
-        BosonOperator: Chemist ordered BosonOperator corresponding to the input two-body-tensor
+        QubitOperator: Chemist ordered QubitOperator corresponding to the input two-body-tensor
     """
     nmodes = tbt.shape[0]
 
-    op = BosonOperator()
+    op = QubitOperator()
     nmodals = tbt.shape[2]
     for i in range(nmodes):
       for j in range(nmodes):
@@ -210,9 +245,9 @@ def unperm_tbt2op(tbt):
               R = j * nmodals + r
               for s in range (nmodals):
                 S = j * nmodals + s
-                term = ((P,1),(Q,0), (R,1),(S,0))
                 coeff = tbt[i,j,p,r,q,s]
-                op += BosonOperator(term, coeff)
+                if coeff != 0:
+                  op += coeff * sigdag(P) * sig(Q) * sigdag(R) * sig(S)
     return op
 
 
@@ -279,8 +314,8 @@ def symmetrize_trbt(trbt, force_sym = False):
 
 def trbt2op(trbt):
     """
-    convert chemist ordered three-body-tensor to BosonOperator. The ordering convention of qubits is such that 
-    an element (i, p, q, j, r, s, k, t, u) of the tensor will be mapped to the coefficient of the BosonOperator 
+    convert chemist ordered three-body-tensor to QubitOperator. The ordering convention of qubits is such that 
+    an element (i, p, q, j, r, s, k, t, u) of the tensor will be mapped to the coefficient of the QubitOperator 
     term ((P,1), (Q,0), (R,1), (S,0), (T, 1), (U, 0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, 
     S = j*nmodals + s, T = k*nmodals + t, U = k*nmodals + u.
 
@@ -288,11 +323,11 @@ def trbt2op(trbt):
         trbt (np.array): three-body-tensor
 
     Returns:
-        BosonOperator: Chemist ordered BosonOperator corresponding to the input three-body-tensor
+        QubitOperator: Chemist ordered QubitOperator corresponding to the input three-body-tensor
     """
     nmodes = trbt.shape[0]
 
-    op = BosonOperator()
+    op = QubitOperator()
     nmodals = trbt.shape[-1]
     for i in range(nmodes):
       for j in range(nmodes):
@@ -311,8 +346,7 @@ def trbt2op(trbt):
                       U = k * nmodals + u
                       coeff = trbt[i,p,q,j,r,s,k,t,u]
                       if coeff != 0:
-                        term = ((P,1),(Q,0), (R,1),(S,0), (T, 1), (U, 0))
-                        op += BosonOperator(term, coeff)
+                        op += coeff * sigdag(P) * sig(Q) * sigdag(R) * sig(S) * sigdag(T) * sig(U)
     return op
 
 
@@ -325,8 +359,8 @@ def trbt2op(trbt):
 
 def unperm_trbt2op(trbt):
     """
-    convert unpermuted three-body-tensor to BosonOperator. The ordering convention of qubits is such that 
-    an element (i, j, k, p, r, t, q, s, u) of the tensor will be mapped to the coefficient of the BosonOperator 
+    convert unpermuted three-body-tensor to QubitOperator. The ordering convention of qubits is such that 
+    an element (i, j, k, p, r, t, q, s, u) of the tensor will be mapped to the coefficient of the QubitOperator 
     term ((P,1), (Q,0), (R,1), (S,0), (T, 1), (U, 0)), where P = i*nmodals + p, Q = i*nmodals + q, R = j*nmodals + r, 
     S = j*nmodals + s, T = k*nmodals + t, U = k*nmodals + u.
 
@@ -334,11 +368,11 @@ def unperm_trbt2op(trbt):
         trbt (np.array): three-body-tensor
 
     Returns:
-        BosonOperator: Chemist ordered BosonOperator corresponding to the input three-body-tensor
+        QubitOperator: Chemist ordered QubitOperator corresponding to the input three-body-tensor
     """
     nmodes = trbt.shape[0]
 
-    op = BosonOperator()
+    op = QubitOperator()
     nmodals = trbt.shape[-1]
     for i in range(nmodes):
       for j in range(nmodes):
@@ -357,6 +391,194 @@ def unperm_trbt2op(trbt):
                       U = k * nmodals + u
                       coeff = trbt[i,j,k,p,r,t,q,s,u]
                       if coeff != 0:
-                        term = ((P,1),(Q,0), (R,1),(S,0), (T, 1), (U, 0))
-                        op += BosonOperator(term, coeff)
+                        op += coeff * sigdag(P) * sig(Q) * sigdag(R) * sig(S) * sigdag(T) * sig(U) 
+    return op
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def obt2_proj_mat(obt):
+  '''
+  Map one-body-tensor to scipy sparse matrix representation of corresponding one-body opeartor in the subspace of one excitation per mode.
+
+  Parameters
+  ----------
+  obt: np.array
+    one-body tensor of shape (nmodes, nmodals, nmodals)  
+
+  Returns
+  -------
+  sp.sparse.csc_matrix
+    sparse matrix of one-body operator in the subspace of one excitation per mode.
+  '''
+  nmodes = obt.shape[0]
+  nmodals = obt.shape[-1]
+  
+  op = 0
+  for i in range (nmodes):
+    for p in range (nmodals):
+      for q in range (nmodals):
+        coeff = obt[i,p,q]
+        if coeff != 0:
+          op += coeff * Epq_mat(i, p, q, nmodals, nmodes)
+  return op
+
+
+
+
+
+
+
+def tbt2_proj_mat(tbt):
+    """
+    Map two-body-tensor to scipy sparse matrix representation of corresponding two-body opeartor in the subspace of one excitation per mode.
+
+    Args:
+        tbt (np.array): two-body-tensor
+
+    Returns:
+        sp.sparse.csc_matrix: sparse matrix of two-body operator in the subspace of one excitation per mode.
+    """
+    nmodes = tbt.shape[0]
+
+    op = 0
+    nmodals = tbt.shape[2]
+    for i in range(nmodes):
+      for j in range(nmodes):
+        for p in range(nmodals):
+          for q in range(nmodals):
+            for r in range (nmodals):
+              for s in range (nmodals):
+                coeff = tbt[i,p,q,j,r,s]
+                if coeff != 0:
+                  op += coeff * Epq_mat(i, p, q, nmodals, nmodes) * Epq_mat(j, r, s, nmodals, nmodes)
+    return op
+
+
+
+
+
+
+
+def unperm_tbt2_proj_mat(tbt):
+    """
+    Map unpermuted two-body-tensor to scipy sparse matrix representation of corresponding two-body opeartor in the subspace of one excitation per mode.
+
+    Args:
+        tbt (np.array): two-body-tensor
+
+    Returns:
+        sp.sparse.csc_matrix: sparse matrix of two-body operator in the subspace of one excitation per mode.
+    """
+    nmodes = tbt.shape[0]
+
+    op = 0
+    nmodals = tbt.shape[2]
+    for i in range(nmodes):
+      for j in range(nmodes):
+        for p in range(nmodals):
+          P = i * nmodals + p
+          for q in range(nmodals):
+            Q = i * nmodals + q
+            for r in range (nmodals):
+              R = j * nmodals + r
+              for s in range (nmodals):
+                S = j * nmodals + s
+                coeff = tbt[i,j,p,r,q,s]
+                if coeff != 0:
+                  op += coeff * Epq_mat(i, p, q, nmodals, nmodes) * Epq_mat(j, r, s, nmodals, nmodes)
+    return op
+
+
+
+
+
+
+
+
+
+
+def trbt2_proj_mat(trbt):
+    """
+    Map three-body-tensor to scipy sparse matrix representation of corresponding three-body opeartor in the subspace of one excitation per mode.
+
+    Args:
+        trbt (np.array): three-body-tensor
+
+    Returns:
+        sp.sparse.csc_matrix: sparse matrix of three-body operator in the subspace of one excitation per mode.
+    """
+    nmodes = trbt.shape[0]
+
+    op = 0
+    nmodals = trbt.shape[-1]
+    for i in range(nmodes):
+      for j in range(nmodes):
+        for k in range(nmodes):
+          for p in range(nmodals):
+            for q in range(nmodals):
+              for r in range (nmodals):
+                for s in range (nmodals):
+                  for t in range (nmodals):
+                    for u in range (nmodals):
+                      coeff = trbt[i,p,q,j,r,s,k,t,u]
+                      if coeff != 0:
+                        op += coeff * Epq_mat(i, p, q, nmodals, nmodes) * Epq_mat(j, r, s, nmodals, nmodes) * Epq_mat(k, t, u, nmodals, nmodes)
+    return op
+
+
+
+
+
+
+
+
+
+def unperm_trbt2_proj_mat(trbt):
+    """
+    Map unpermuted three-body-tensor to scipy sparse matrix representation of corresponding three-body opeartor in the subspace of one excitation per mode.
+
+    Args:
+        trbt (np.array): three-body-tensor
+
+    Returns:
+        sp.sparse.csc_matrix: sparse matrix of three-body operator in the subspace of one excitation per mode.
+    """
+    nmodes = trbt.shape[0]
+
+    op = 0
+    nmodals = trbt.shape[-1]
+    for i in range(nmodes):
+      for j in range(nmodes):
+        for k in range(nmodes):
+          for p in range(nmodals):
+            for q in range(nmodals):
+              for r in range (nmodals):
+                for s in range (nmodals):
+                  for t in range (nmodals):
+                    for u in range (nmodals):
+                      coeff = trbt[i,j,k,p,r,t,q,s,u]
+                      if coeff != 0:
+                        op += coeff * Epq_mat(i, p, q, nmodals, nmodes) * Epq_mat(j, r, s, nmodals, nmodes) * Epq_mat(k, t, u, nmodals, nmodes)
     return op
