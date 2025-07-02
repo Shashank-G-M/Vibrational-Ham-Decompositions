@@ -148,7 +148,7 @@ def get_DF_tbts(tbt, cutoff = 1e-5, force_sym = True):
   SF_es, DF_e_ten, orbrot_ten = DF_terms(tbt, cutoff, force_sym)
   frag_tens = []                                          #List to store fragment tensors
 
-  print (len(SF_es), " fragments found with eigenvalues greater than ", cutoff)
+#   print (len(SF_es), " fragments found with eigenvalues greater than ", cutoff)
   for h in range(len(SF_es)):
     coeff_mat = DF_e_ten[h, :, :]                         #Extract the coefficients of the h'th fragment
     u = orbrot_ten[h, :, :, :]                            #Extract the orbital rotation matrix of the h'th fragment for all modes
