@@ -4,7 +4,7 @@ from copy import copy
 from openfermion import QubitOperator, get_sparse_operator
 from itertools import permutations
 from . qubit_utils import sigdag, sig, Epq_mat, Zp_mat
-
+from opt_einsum import contract
 
 
 
@@ -928,3 +928,45 @@ def unperm_refcart_2_proj_mat(tensor):
     else:
         raise ValueError("Input tensor must be either a one-body tensor (2D or 3D), two-body tensor (6D) or a three-body tensor (9D).")
     return sparse_mat
+
+
+
+
+
+
+
+
+
+def sparse_1norm(obt,tbt,trbt,ret_const=False):
+    '''
+    Obtian the induced one-norm of the Pauli LCU for the Hamiltonian defined by the given tensors. Refer to the overleaf document for more information.
+
+    Parameters
+    ----------
+    obt: np.array
+      one-body tensor of shape (nmodes, nmodals, nmodals) 
+    tbt: np.array
+      two-body tensor of shape (nmodes, nmodals, nmodals,nmodes, nmodals, nmodals)  
+    trbt: np.array
+      three-body tensor of shape (nmodes, nmodals, nmodals,nmodes, nmodals, nmodals,nmodes, nmodals, nmodals)  
+    ret_const: bool
+      If true, returns the coefficient of the identity in the Pauli LCU
+
+    Returns
+    -------
+    float
+      one-norm of the Pauli LCU
+    float (optional)
+      coefficient of the identity in the Pauli LCU
+    '''
+
+    obt_tilde = np.abs(obt + contract('ipqjrr -> ipq', tbt)/2 + contract('ipqjrrktt -> ipq', trbt)/8)
+    tbt_tilde = np.abs(tbt + contract('ipqjrsktt -> ipqjrs')/2)
+    trbt_tilde = np.abs(trbt)
+    const = contract('ipp -> ', obt)/2 + contract('ippjrr -> ', tbt)/8 + contract('ippjrrktt -> ', trbt)/48
+    one_norm = np.sum(obt_tilde)/2 + np.sum(symmetrize_tbt(tbt_tilde, force_sym=True))/8 + np.sum(symmetrize_trbt(trbt_tilde, force_sym=True))/48
+
+    if ret_const:
+       return one_norm, const
+    else:
+      return one_norm
