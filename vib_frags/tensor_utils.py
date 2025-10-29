@@ -961,7 +961,7 @@ def sparse_1norm(obt,tbt,trbt,ret_const=False):
     '''
 
     obt_tilde = np.abs(obt + contract('ipqjrr -> ipq', tbt)/2 + contract('ipqjrrktt -> ipq', trbt)/8)
-    tbt_tilde = np.abs(tbt + contract('ipqjrsktt -> ipqjrs')/2)
+    tbt_tilde = np.abs(tbt + contract('ipqjrsktt -> ipqjrs', trbt)/2)
     trbt_tilde = np.abs(trbt)
     const = contract('ipp -> ', obt)/2 + contract('ippjrr -> ', tbt)/8 + contract('ippjrrktt -> ', trbt)/48
     one_norm = np.sum(obt_tilde)/2 + np.sum(symmetrize_tbt(tbt_tilde, force_sym=True))/8 + np.sum(symmetrize_trbt(trbt_tilde, force_sym=True))/48
