@@ -28,13 +28,13 @@ def load_23_mode_params(mol, nmodes, nmodals, loc=True):
     H3_frag = np.zeros((nf,nmodes,nmodes,nmodes,nmodals,nmodals,nmodals,nmodals,nmodals,nmodals))
     for i in range(nf):
         H2_frag[i], H3_frag[i] = get_fragment_23(params[i], nmodals, nmodes)
-    #     if np.sqrt(norms[i+1]/norms[0]) >= 0.05:
-    #         H2_frag[i], H3_frag[i] = get_fragment(params[i], nmodals, nmodes)
-    #     else:
-    #         H2_frag[i], H3_frag[i] = get_fragment(params[i], nmodals, nmodes)
-    #         print(f'Total number of fragments included = {i+1}')
-    #         break
-    # nf = i+1  #Number of fragments included
+        if np.sqrt(norms[i+1]/norms[0]) >= 0.001:
+            H2_frag[i], H3_frag[i] = get_fragment_23(params[i], nmodals, nmodes)
+        else:
+            H2_frag[i], H3_frag[i] = get_fragment_23(params[i], nmodals, nmodes)
+            print(f'Total number of fragments included = {i+1}')
+            break
+    nf = i+1  #Number of fragments included
     H2_frag = H2_frag[:nf] 
     H3_frag = H3_frag[:nf]
 
@@ -66,9 +66,9 @@ def load_2_mode_params(mol, nmodes, nmodals, loc=True):
     for i in range(nf):
        H2_frag[i] = get_fragment_2(params[i], nmodals, nmodes)
     #   if np.sqrt(norms[i+1]/norms[0]) >= 0.05:
-    #      H2_frag[i] = get_fragment(params[i], nmodals, nmodes)
+    #      H2_frag[i] = get_fragment_2(params[i], nmodals, nmodes)
     #   else:
-    #      H2_frag[i] = get_fragment(params[i], nmodals, nmodes)
+    #      H2_frag[i] = get_fragment_2(params[i], nmodals, nmodes)
     #      print(f'Total number of fragments included = {i+1}')
     #      break
     # nf = i+1  #Number of fragments included
