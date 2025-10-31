@@ -936,10 +936,68 @@ def unperm_refcart_2_proj_mat(tensor):
 
 
 
-
-def sparse_1norm(obt,tbt,trbt,ret_const=False):
+def get_opt_Pauli_LCU_tensors(C = None, obt = None, tbt = None, trbt = None):
     '''
-    Obtian the induced one-norm of the Pauli LCU for the Hamiltonian defined by the given tensors. Refer to the overleaf document for more information.
+    Get the modified tensors obtained by contracting tensors in sub-optimal Pauli LCU due to redundunt identities. 
+    This gives the input to the function "qubit_utils.get_QOP_of_Pauli_LCU" when opt=True.
+    We assume atleast one of the three tensors are provided.
+    
+    parameters
+    ----------
+    C : int (optional)
+        Constant term
+    obt: np.array (optional)
+      one-body tensor of the Hamiltonian of shape (nmodes, nmodals, nmodals).
+    tbt: np.array (optional)
+      two-body tensor of the Hamiltonian of shape (nmodes, nmodals, nmodals,nmodes, nmodals, nmodals)
+    trbt: np.array (optional)
+      three-body tensor of the Hamiltonian of shape (nmodes, nmodals, nmodals,nmodes, nmodals, nmodals,nmodes, nmodals, nmodals)  
+    
+    Returns
+    -------
+    openfermion.QubitOperator
+        QubitOperator corresponding to the new constant term
+    openfermion.QubitOperator
+        QubitOperator corresponding to the new obt
+    openfermion.QubitOperator
+        QubitOperator corresponding to the new tbt
+    openfermion.QubitOperator
+        QubitOperator corresponding to the new trbt
+    '''
+    
+    if all(ten is None for ten in (obt, tbt, trbt)):
+       raise TypeError('Atleast one of the tensors should not be None')
+
+    nmodes = next(ten.shape[0] for ten in (obt, tbt, trbt) if ten is not None)
+    nmodals = next(ten.shape[-1] for ten in (obt, tbt, trbt) if ten is not None)
+    
+    if C is None:
+       C = 0
+    if obt is None:
+       obt = np.zeros((nmodes, nmodals, nmodals))
+    if tbt is None:
+       tbt = np.zeros((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
+    if trbt is None:
+       trbt = np.zeros((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
+    tbt_sym = symmetrize_tbt(tbt)
+    trbt_sym = symmetrize_trbt(trbt)
+
+    C_tilde = C + contract('ipp -> ', obt)/2 + contract('ippjrr -> ', tbt_sym)/4 + contract('ippjrrktt -> ', trbt_sym)/8
+    obt_tilde = obt + contract('ipqjrr -> ipq', tbt_sym) + contract('ipqjrrktt -> ipq', trbt_sym)*3/4
+    tbt_tilde = tbt_sym + contract('ipqjrsktt -> ipqjrs', trbt_sym)*3/2
+    trbt_tilde = trbt_sym
+
+    return C_tilde, obt_tilde, tbt_tilde, trbt_tilde
+    
+
+
+
+
+
+
+def opt_Pauli_LCU_1norm(obt,tbt,trbt,ret_const=False):
+    '''
+    Obtian the induced one-norm of the optimal Pauli LCU for the Hamiltonian defined by the given tensors. Refer to the overleaf document for more information.
 
     Parameters
     ----------
@@ -956,17 +1014,15 @@ def sparse_1norm(obt,tbt,trbt,ret_const=False):
     -------
     float
       one-norm of the Pauli LCU
-    float (optional)
+    float (if ret_const = True)
       coefficient of the identity in the Pauli LCU
     '''
 
-    obt_tilde = np.abs(obt + contract('ipqjrr -> ipq', tbt)/2 + contract('ipqjrrktt -> ipq', trbt)/8)
-    tbt_tilde = np.abs(tbt + contract('ipqjrsktt -> ipqjrs', trbt)/2)
-    trbt_tilde = np.abs(trbt)
-    const = contract('ipp -> ', obt)/2 + contract('ippjrr -> ', tbt)/8 + contract('ippjrrktt -> ', trbt)/48
-    one_norm = np.sum(obt_tilde)/2 + np.sum(symmetrize_tbt(tbt_tilde, force_sym=True))/8 + np.sum(symmetrize_trbt(trbt_tilde, force_sym=True))/48
+    C_tilde, obt_tilde, tbt_tilde, trbt_tilde = get_opt_Pauli_LCU_tensors(C = None, obt = obt, tbt = tbt, trbt = trbt)
+
+    one_norm = np.sum(np.abs(obt_tilde))/2 + np.sum(np.abs(tbt_tilde))/4 + np.sum(np.abs(trbt_tilde))/8
 
     if ret_const:
-       return one_norm, const
+       return one_norm, C_tilde
     else:
       return one_norm
