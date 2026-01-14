@@ -3,3 +3,5 @@ __pycache__/
 *.zip
 *.hdf5
 *.out
+*.pkl
+*.npz
