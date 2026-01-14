@@ -1026,3 +1026,76 @@ def opt_Pauli_LCU_1norm(obt,tbt,trbt,ret_const=False):
        return one_norm, C_tilde
     else:
       return one_norm
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def get_opt_THC_LCU_tensors(C = None, obt = None, tbt = None, trbt = None, zeta = None, gamma = None):
+    '''
+    Get the modified tensors obtained by contracting THC tensors due to changing number operators to reflections.
+    We assume atleast one of the three tensors are provided.
+    
+    parameters
+    ----------
+    C : int (optional)
+        Constant term
+    obt: np.array (optional)
+      one-body tensor of the Hamiltonian of shape (nmodes, nmodals, nmodals).
+    tbt: np.array (optional)
+      Fully symmetrized two-body tensor of the Hamiltonian of shape (nmodes, nmodals, nmodals,nmodes, nmodals, nmodals)
+    trbt: np.array (optional)
+      Fully symmetrized three-body tensor of the Hamiltonian of shape (nmodes, nmodals, nmodals,nmodes, nmodals, nmodals,nmodes, nmodals, nmodals)  
+    zeta: np.array (optional)
+      THC two-mode tensor of shape (nmodes, nmodes, nthc, nthc)
+    gamma: np.array (optional)
+      THC three-mode tensor of shape (nmodes, nmodes, nmodes, nthc, nthc, nthc)
+
+    
+    Returns
+    -------
+        Modified tensors
+    '''
+    
+    if all(ten is None for ten in (obt, tbt, trbt)):
+       raise TypeError('Atleast one of the Hamiltonian tensors should not be None')
+    
+    if all(ten is None for ten in (zeta, gamma)):
+       raise TypeError('Atleast one of the THC tensors should not be None')
+
+    nmodes = next(ten.shape[0] for ten in (obt, tbt, trbt) if ten is not None)
+    nmodals = next(ten.shape[-1] for ten in (obt, tbt, trbt) if ten is not None)
+    nthc = next(ten.shape[-1] for ten in (zeta, gamma) if ten is not None)
+    
+    if C is None:
+       C = 0
+    if obt is None:
+       obt = np.zeros((nmodes, nmodals, nmodals))
+    if tbt is None:
+       tbt = np.zeros((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
+    if trbt is None:
+       trbt = np.zeros((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
+    if zeta is None:
+       zeta = np.zeros((nmodes, nmodes, nthc, nthc))
+    if gamma is None:
+       gamma = np.zeros((nmodes, nmodes, nmodes, nthc, nthc, nthc))
+
+    gamma_tilde = -gamma
+    zeta_tilde = zeta + 3*contract('ijkuvw -> ijuv', gamma)
+    obt_tilde = obt - (1/2)*contract('ipqjrr -> ipq', tbt) - (3/8)*contract('ipqjrrktt -> ipq', trbt)
+    C_tilde = C + (1/2)*contract('ipp -> ', obt_tilde) + (1/4)*contract('ippjrr -> ', tbt) + (1/8)*contract('ippjrrktt -> ', trbt)
+
+    return C_tilde, obt_tilde, zeta_tilde, gamma_tilde
