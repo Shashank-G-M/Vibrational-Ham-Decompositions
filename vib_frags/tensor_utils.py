@@ -151,6 +151,37 @@ def symmetrize_tbt(tbt, force_sym = False):
 
 
 
+def obt2tbt(obt):
+  '''
+  promote a one-body-tensor to a two-body-tensor.
+
+  Parameters
+  ----------
+  obt: np.array
+    one-body tensor of shape (nmodes, nmodals, nmodals)  
+
+  Returns
+  -------
+  np.array
+    two-body tensor of shape (nmodes, nmodals, nmodals, nmodes, nmodals, nmodals)
+  '''
+  nmodes = obt.shape[0]
+  nmodals = obt.shape[-1]
+
+  tbt = np.zeros((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
+  for i in range (nmodes):
+     obt_i = obt[i]
+     e_i, u_i = np.linalg.eigh(obt_i)
+     tbt[i,:,:,i,:,:] = np.einsum('k, pk, qk, rk, sk -> pqrs', e_i, u_i, u_i, u_i, u_i, optimize = True)
+
+  return tbt
+
+
+
+
+
+
+
 def obt2op(obt):
   '''
   convert one-body-tensor to QubitOperator. The ordering convention of qubits is such that an element (i, p, q) of the tensor will be mapped to the coefficient
