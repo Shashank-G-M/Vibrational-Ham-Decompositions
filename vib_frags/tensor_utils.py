@@ -470,12 +470,13 @@ def obt2_proj_mat(obt):
 
 
 
-def tbt2_proj_mat(tbt):
+def tbt2_proj_mat(tbt, nonsym = False):
     """
     Map two-body-tensor to scipy sparse matrix representation of corresponding two-body opeartor in the subspace of one excitation per mode.
 
     Args:
         tbt (np.array): two-body-tensor
+        nonsym (bool): If set to true, tbt is assumed to be not symmetrized and hence only one of the symmetry sector is considered.
 
     Returns:
         sp.sparse.csc_matrix: sparse matrix of two-body operator in the subspace of one excitation per mode.
@@ -1008,15 +1009,21 @@ def get_opt_Pauli_LCU_tensors(C = None, obt = None, tbt = None, trbt = None):
        obt = np.zeros((nmodes, nmodals, nmodals))
     if tbt is None:
        tbt = np.zeros((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
-    if trbt is None:
-       trbt = np.zeros((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
-    tbt_sym = symmetrize_tbt(tbt)
-    trbt_sym = symmetrize_trbt(trbt)
 
-    C_tilde = C + contract('ipp -> ', obt)/2 + contract('ippjrr -> ', tbt_sym)/4 + contract('ippjrrktt -> ', trbt_sym)/8
-    obt_tilde = obt + contract('ipqjrr -> ipq', tbt_sym) + contract('ipqjrrktt -> ipq', trbt_sym)*3/4
-    tbt_tilde = tbt_sym + contract('ipqjrsktt -> ipqjrs', trbt_sym)*3/2
-    trbt_tilde = trbt_sym
+    tbt_sym = symmetrize_tbt(tbt)
+    
+    C_tilde = C + contract('ipp -> ', obt)/2 + contract('ippjrr -> ', tbt_sym)/4
+    obt_tilde = obt + contract('ipqjrr -> ipq', tbt_sym)
+    tbt_tilde = tbt_sym
+
+    if trbt is not None:
+      trbt_sym = symmetrize_trbt(trbt)
+      C += contract('ippjrrktt -> ', trbt_sym)/8
+      obt_tilde += contract('ipqjrrktt -> ipq', trbt_sym)*3/4
+      tbt_tilde += contract('ipqjrsktt -> ipqjrs', trbt_sym)*3/2
+      trbt_tilde = trbt_sym
+    else:
+      trbt_tilde = None
 
     return C_tilde, obt_tilde, tbt_tilde, trbt_tilde
     
@@ -1051,7 +1058,10 @@ def opt_Pauli_LCU_1norm(obt,tbt,trbt,ret_const=False):
 
     C_tilde, obt_tilde, tbt_tilde, trbt_tilde = get_opt_Pauli_LCU_tensors(C = None, obt = obt, tbt = tbt, trbt = trbt)
 
-    one_norm = np.sum(np.abs(obt_tilde))/2 + np.sum(np.abs(tbt_tilde))/4 + np.sum(np.abs(trbt_tilde))/8
+    one_norm = np.sum(np.abs(obt_tilde))/2 + np.sum(np.abs(tbt_tilde))/4
+
+    if trbt_tilde is not None:
+       one_norm += np.sum(np.abs(trbt_tilde))/8
 
     if ret_const:
        return one_norm, C_tilde
@@ -1126,7 +1136,57 @@ def get_opt_THC_LCU_tensors(C = None, obt = None, tbt = None, trbt = None, zeta 
 
     gamma_tilde = -gamma
     zeta_tilde = zeta + 3*contract('ijkuvw -> ijuv', gamma)
-    obt_tilde = obt - (1/2)*contract('ipqjrr -> ipq', tbt) - (3/8)*contract('ipqjrrktt -> ipq', trbt)
+    obt_tilde = obt + (1/2)*contract('ipqjrr -> ipq', tbt) - (3/8)*contract('ipqjrrktt -> ipq', trbt)
     C_tilde = C + (1/2)*contract('ipp -> ', obt_tilde) + (1/4)*contract('ippjrr -> ', tbt) + (1/8)*contract('ippjrrktt -> ', trbt)
 
     return C_tilde, obt_tilde, zeta_tilde, gamma_tilde
+
+
+
+
+
+
+
+
+
+
+
+
+def THC_2_mat(xi, zeta):
+    """
+    Convert tbt defined by THC parameters to matrix representation in the one excitation per mode subspace.
+
+    Parameters
+    ----------
+    xi : np.array
+        THC obrital rotation matrix of shape (nmodes, nthc, nmodals)
+    zeta : np.array
+        THC zeta tensor (nmodes, nmodes, nthc, nthc) = (i,j,u,v)
+
+    Returns
+    -------
+    sp.sparse.csc_matrix
+        Two body tensor as a scipy sparse matrix of shape (nmodals^nmodes, nmodals^nmodes).
+    """
+
+    
+    nmodes, nthc, nmodals = xi.shape
+    id_mat = sp.sparse.identity(nmodals**nmodes, dtype=float, format='csc')
+
+    tbt_mat = sp.sparse.csc_matrix((nmodals**nmodes, nmodals**nmodes), dtype=float)
+
+    obts = np.einsum('iup, iuq -> uipq', xi, xi)
+    for i in range(nmodes):
+        for u in range (nthc):
+            obtiu = np.zeros((nmodes, nmodals, nmodals), dtype=float)
+            obtiu[i] = obts[u, i]
+            obtiu_mat = obt2_proj_mat(obtiu)
+            for j in range(nmodes):
+                for v in range (nthc):
+                    obtjv = np.zeros((nmodes, nmodals, nmodals), dtype=float)
+                    obtjv[j] = obts[v, j]
+                    obtjv_mat = obt2_proj_mat(obtjv)
+                    if i != j:
+                        tbt_mat += 0.25*zeta[i, j, u, v]*(id_mat - 2*obtiu_mat)*(id_mat - 2*obtjv_mat)
+
+    return tbt_mat        
