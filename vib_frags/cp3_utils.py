@@ -2,6 +2,9 @@ import jax
 import jax.numpy as jnp
 from jax import jit
 import optax
+import numpy as np
+from collections import deque
+from copy import copy
 
 
 # ------------------------------------------------------------
@@ -72,7 +75,9 @@ def fit_cp_symmetric(
     rho=0,
     key=jax.random.PRNGKey(0),
     initial_guess = None,
-    tol = 1e-5
+    tol = 1e-5,
+    check_convergence = False,
+    window_size = 100
 ):
     """
     Fit Z_{p,q,k} ≈ sum_u A_{u,p} A_{u,q} C_{k,u}
@@ -84,10 +89,20 @@ def fit_cp_symmetric(
     if initial_guess is None:
         key, k1, k2 = jax.random.split(key, 3)
         theta = jax.random.uniform(k1, shape=(rank, P-1), minval=0.1, maxval=jnp.pi - 0.1)
-        C = jax.random.normal(k2, shape=(K, rank))
-        params = (theta, C)
+        C = jax.random.normal(k2, shape=(K, rank))*0
     else:
         params = initial_guess
+        theta_ = params[0]
+        C_ = params[1]
+        if theta_.shape[0] < rank:
+            theta = jnp.zeros((rank, P-1))
+            theta = theta.at[:theta_.shape[0], :].set(theta_)
+            C = jnp.zeros((K, rank))
+            C = C.at[:, :C_.shape[1]].set(C_)
+        else:
+            theta = theta_
+            C = C_
+    params = (theta, C)
     
     # --- Adam optimizer ---
     optimizer = optax.adam(lr)
@@ -107,6 +122,11 @@ def fit_cp_symmetric(
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
+    # 1. Initialize the buffer with a fixed size given by window_size
+    loss_history = deque(maxlen=window_size)
+    # --- training loop ---
+    for step in range(100):
+        params, opt_state, loss = train_step(params, opt_state, Z, rho)
 
     # --- training loop ---
     for step in range(n_steps+1):
@@ -117,9 +137,111 @@ def fit_cp_symmetric(
             app_1norm = jnp.sum(jnp.abs(params[1]))
             print(f"Step {step:5d} | Approximation error = {app_error:.6e}, One-norm = {app_1norm:.6e}")
 
-        if loss < tol:
-            break
+        loss_history.append(float(loss))
+        if step > 2*window_size:
+            if check_convergence:
+                if np.std(np.abs(loss_history)) < 1e-7:
+                    print(f"Loss stabilized at step {step}")
+                    break
+            else:
+                if app_error < tol:
+                    break
 
     theta, C = params
 
     return theta, C
+
+
+
+
+
+
+
+# ------------------------------------------------------------
+# Greedy loss function
+# ------------------------------------------------------------
+def greedy_loss_fn(theta_u, Z_residual, rho):
+    """
+    Squared Frobenius norm loss.
+    """
+    A_u = angles_to_unit_vectors(theta_u.reshape(1, -1))
+    C_u = jnp.einsum("p,q,pqk->k", A_u[0], A_u[0], Z_residual)
+    return -jnp.sum(jnp.abs(C_u))                                       #Negative sign is there to ensure that optimizer maximizes one-norm of C_u
+
+
+
+
+def fit_greedy_cp_symmetric(
+    Z,
+    rank,
+    n_steps=10000,
+    lr=5e-3,
+    rho=0,
+    key=jax.random.PRNGKey(0),
+    initial_guess = None,
+    tol = 1e-5,
+    check_convergence = False,
+    window_size = 100
+):
+    """
+    Fit Z_{p,q,k} ≈ sum_u A_{u,p} A_{u,q} C_{k,u}
+    with ||A[u,:]|| = 1 enforced via angles.
+    """
+    P, _, K = Z.shape
+
+    # --- initialize parameters ---
+    if initial_guess is None:
+        key, k1, k2 = jax.random.split(key, 3)
+        theta = jax.random.uniform(k1, shape=(rank, P-1), minval=0.1, maxval=jnp.pi - 0.1)
+    else:
+        params = initial_guess
+        theta_ = params[0]
+        if theta_.shape[0] < rank:
+            theta = jnp.zeros((rank, P-1))
+            theta = theta.at[:theta_.shape[0], :].set(theta_)
+        else:
+            theta = theta_
+    
+    # --- Adam optimizer ---
+    optimizer = optax.adam(lr)
+    
+    # ------------------------------------------------------------
+    # Single Adam update step
+    # ------------------------------------------------------------
+    @jit
+    def train_step(params, opt_state, Z_residual, rho):
+        """
+        One Adam step.
+        """
+        loss, grads = jax.value_and_grad(greedy_loss_fn)(params, Z_residual, rho)
+        updates, opt_state = optimizer.update(grads, opt_state, params)
+        params = optax.apply_updates(params, updates)
+        return params, opt_state, loss
+
+    final_theta = np.zeros((rank, P-1))
+    final_C = np.zeros((Z.shape[-1], rank))
+
+    Z_residual = copy(Z)
+    for u in range(rank):
+        theta_u = theta[u]
+        opt_state = optimizer.init(theta_u)
+        
+        # --- training loop ---
+        for step in range(n_steps+1):
+            theta_u, opt_state, loss = train_step(theta_u, opt_state, Z_residual, rho)
+
+            if step % 400 == 0:
+                if np.abs(loss) < tol:
+                    break
+        
+        final_theta[u] = theta_u
+        A_u = angles_to_unit_vectors(theta_u.reshape(1, -1))
+        C_u = jnp.einsum("p,q,pqk->k", A_u[0], A_u[0], Z_residual)
+        final_C[:, u] = np.array(C_u)
+
+        Z_approx_u = jnp.einsum("p,q,k->pqk", A_u[0], A_u[0], C_u)
+        Z_residual = Z_residual - Z_approx_u
+        error = 0.5*float(jnp.sqrt(jnp.sum((Z_residual)**2)))
+        print (f"Rank: {u}, Error: {error}")
+
+    return final_theta, final_C
