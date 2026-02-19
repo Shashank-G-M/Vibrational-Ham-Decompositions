@@ -1,4 +1,5 @@
 __pycache__/
+midascpp_results/
 *.py[cod]
 *.zip
 *.hdf5
