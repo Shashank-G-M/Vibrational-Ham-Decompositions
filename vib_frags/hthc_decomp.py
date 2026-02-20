@@ -740,7 +740,7 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
     org_diff = ten_norm(tbt, fro=fro)
     if trbt_is_None == False:
         org_diff += ten_norm(trbt, fro=fro)
-    print ("Original tensor norm: ", org_diff)
+    print ("Original tensor norm: ", org_diff, flush = True)
     
     int_theta, int_zeta, int_gamma, _, _, _, _ = _extract_from_x_vec(x0, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, trbt_is_None, indices)
     
@@ -758,7 +758,7 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
         if trbt_is_None == False:
             int_error += ten_norm(int_trbt - trbt, fro=fro)
 
-        print (f'Iter {i}: (one-norm, error) = ({int_norm}, {int_error.item()})')
+        print (f'Iter {i}: (one-norm, error) = ({int_norm}, {int_error.item()})', flush = True)
 
         # 2. Execute 100 steps instantaneously in C++
         x0, opt_state, chunk_losses = update_chunk(x0, opt_state)
@@ -768,12 +768,12 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
 
         if verbose == True and i % 1000 == 0:
             # Print the very last loss of the current chunk
-            print(f"Iteration {i}: Loss = {losses[-1]:.6e}")
+            print(f"Iteration {i}: Loss = {losses[-1]:.6e}", flush = True)
         
         # # Simple convergence check (using the last two elements of the entire history)
         # if len(losses) > 1 and abs(losses[-1] - losses[-2]) < 1e-12:
         #     if verbose == True:
-        #         print(f"Converged around iteration {i + chunk_size}")
+        #         print(f"Converged around iteration {i + chunk_size}", flush = True)
         #     break
         
     theta, zeta, gamma, avec, bvec, beta_mats_params, dvec = _extract_from_x_vec(x0, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, trbt_is_None, indices)    
