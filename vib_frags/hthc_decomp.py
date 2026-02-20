@@ -748,7 +748,7 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
     num_chunks = maxiter // chunk_size
 
     for chunk in range(num_chunks):
-        # i maps to 0, 100, 200, 300, etc.
+        # i maps to 0, 100, 200, 300, etc. if chunk_size = 100
         i = chunk * chunk_size
         
         # 1. Evaluate and print intermediate state BEFORE the chunk runs
@@ -766,15 +766,15 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
         # 3. Pull the 100 losses back to Python memory once, instead of 100 times
         losses.extend(np.array(chunk_losses).tolist())
 
-        if verbose > 1 and i % 1000 == 0:
+        if verbose == True and i % 1000 == 0:
             # Print the very last loss of the current chunk
             print(f"Iteration {i}: Loss = {losses[-1]:.6e}")
         
-        # Simple convergence check (using the last two elements of the entire history)
-        if len(losses) > 1 and abs(losses[-1] - losses[-2]) < 1e-12:
-            if verbose > 1:
-                print(f"Converged around iteration {i + chunk_size}")
-            break
+        # # Simple convergence check (using the last two elements of the entire history)
+        # if len(losses) > 1 and abs(losses[-1] - losses[-2]) < 1e-12:
+        #     if verbose == True:
+        #         print(f"Converged around iteration {i + chunk_size}")
+        #     break
         
     theta, zeta, gamma, avec, bvec, beta_mats_params, dvec = _extract_from_x_vec(x0, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, trbt_is_None, indices)    
     final_params = pack_2dict(theta, zeta, Nthc, Nmode, gamma, avec, bvec, beta_mats_params, dvec)
@@ -1028,12 +1028,12 @@ def get_vib_hthc_opt_theta(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, 
         losses.append(float(loss))
 
         # print (loss)
-        if verbose > 1 and i % 1000 == 0:
+        if verbose == True and i % 1000 == 0:
             print(f"Iteration {i}: Loss = {loss:.6e}")
         
         # Simple convergence check
         if i > 10 and abs(losses[-1] - losses[-2]) < 1e-12:
-            if verbose > 1:
+            if verbose == True:
                 print(f"Converged at iteration {i}")
             break
         
@@ -1291,12 +1291,12 @@ def get_vib_hthc_opt_zeta(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, r
         losses.append(float(loss))
 
         # print (loss)
-        if verbose > 1 and i % 1000 == 0:
+        if verbose == True and i % 1000 == 0:
             print(f"Iteration {i}: Loss = {loss:.6e}")
         
         # Simple convergence check
         if i > 10 and abs(losses[-1] - losses[-2]) < 1e-12:
-            if verbose > 1:
+            if verbose == True:
                 print(f"Converged at iteration {i}")
             break
         
