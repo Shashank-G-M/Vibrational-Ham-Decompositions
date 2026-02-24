@@ -9,8 +9,9 @@ from . import thc_utils
 from . import qubit_utils
 from . import dfthc_utils
 from . import cp3_utils
+from . import cp3_utils_hpc
 from . import eigen_utils
 from . import thc_decomp
 from . import hthc_decomp
 
-__all__ = ['df_utils', 'tf_utils', 'tensor_utils', 'glro_utils', 'thc_utils', 'mode2_gfro_utils', 'mode23_gfro_utils', 'io_utils', 'qubit_utils', 'dfthc_utils', 'cp3_utils', 'eigen_utils', 'thc_decomp', 'hthc_decomp']
+__all__ = ['df_utils', 'tf_utils', 'tensor_utils', 'glro_utils', 'thc_utils', 'mode2_gfro_utils', 'mode23_gfro_utils', 'io_utils', 'qubit_utils', 'dfthc_utils', 'cp3_utils', 'eigen_utils', 'thc_decomp', 'hthc_decomp', 'cp3_utils_hpc']
