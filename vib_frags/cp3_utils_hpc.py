@@ -5,6 +5,55 @@ import optax
 import numpy as np
 from functools import partial
 
+
+# ------------------------------------------------------------
+# Convert paramteres from dictionary to 1D array
+# ------------------------------------------------------------
+def pack_to_flat_params(nmodes, thetas_dict, Cs_dict, Nthc_list):
+    """
+    Converts legacy dictionary-based parameters into flat 2D arrays,
+    dynamically padding or truncating them to match the target Nthc_list.
+    """
+    theta_list = []
+    C_list = []
+    
+    for i in range(nmodes):
+        target_rank = Nthc_list[i]
+        theta_i = thetas_dict[i]
+        
+        # Transpose C back to (old_rank, K)
+        C_i = Cs_dict[i].T 
+        
+        old_rank = theta_i.shape[0]
+        P_minus_1 = theta_i.shape[1]
+        K_dim = C_i.shape[1]
+        
+        # 1. Pad with zeros if the warm start rank is too small
+        if old_rank < target_rank:
+            pad_len = target_rank - old_rank
+            
+            theta_pad = jnp.zeros((pad_len, P_minus_1))
+            theta_i = jnp.concatenate([theta_i, theta_pad], axis=0)
+            
+            C_pad = jnp.zeros((pad_len, K_dim))
+            C_i = jnp.concatenate([C_i, C_pad], axis=0)
+            
+        # 2. Truncate if the warm start rank is somehow larger
+        elif old_rank > target_rank:
+            theta_i = theta_i[:target_rank, :]
+            C_i = C_i[:target_rank, :]
+            
+        theta_list.append(theta_i)
+        C_list.append(C_i)
+        
+    # Stack the lists into flat JAX arrays
+    theta_flat = jnp.concatenate(theta_list, axis=0)
+    C_flat = jnp.concatenate(C_list, axis=0)
+    
+    return theta_flat, C_flat
+
+
+
 # ------------------------------------------------------------
 # Hyperspherical parametrization (Batched)
 # ------------------------------------------------------------
