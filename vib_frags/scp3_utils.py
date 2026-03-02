@@ -155,7 +155,7 @@ def fit_scp3(trbt: jnp.ndarray, rank: int, lr: float = 1e-2,
         return params, opt_state, loss_val
 
     # 6. Optimization Loop
-    print(f"Starting SCP3 optimization for {maxiter} iterations (rank={rank})...")
+    print(f"Starting SCP3 optimization for {maxiter} iterations (rank={rank})...", flush=True)
     start_time = time.time()
     
     for i in range(maxiter):
@@ -164,7 +164,7 @@ def fit_scp3(trbt: jnp.ndarray, rank: int, lr: float = 1e-2,
         if i % print_every == 0 or i == maxiter - 1:
             frob_error = jnp.sqrt(loss_sq_val)
             rel_error = frob_error / trbt_norm
-            print(f"Iteration {i:5d} | Error Norm: {frob_error:.6e} | Relative Error: {rel_error:.6f}")
+            print(f"Iteration {i:5d} | Error Norm: {frob_error:.6e} | Relative Error: {rel_error:.6f}", flush=True)
             
     end_time = time.time()
     print(f"Optimization finished in {end_time - start_time:.2f} seconds.")
