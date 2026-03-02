@@ -151,6 +151,36 @@ def symmetrize_tbt(tbt, force_sym = False):
 
 
 
+def unsymmetrize_tbt(tbt):
+  """
+  Assuming the input two body tensor to have eight fold symmetry, provide the corresponding unsymmetrized tbt_nonsym from which
+  the symmetrized tbt was generated. That is, unsymmetrize_tbt(symmetrize_tbt(tbt)) = tbt.
+  
+  Parameters
+  ----------
+  tbt : np.ndarray
+      A two body tensor of shape (i, p, q, j, r, s).
+      
+  Returns
+  -------
+  np.ndarray
+      An unsymmetrized two body tensor of shape (i, p, q, j, r, s). 
+  """
+
+  tbt_nonsym = np.zeros_like(tbt)
+  
+  nmodes = tbt.shape[0]
+  
+  for i in range(nmodes):
+    for j in range(i):
+      tbt_nonsym[i, :, :, j, :, :] = 2*tbt[i, :, :, j, :, :]
+  
+  return tbt_nonsym
+
+
+
+
+
 def obt2tbt(obt):
   '''
   promote a one-body-tensor to a two-body-tensor.
@@ -338,6 +368,35 @@ def symmetrize_trbt(trbt, force_sym = False):
 
 
 
+
+
+
+def unsymmetrize_trbt(trbt):
+  """
+  Assuming the input three body tensor to have 48 fold symmetry, provide the corresponding unsymmetrized trbt_nonsym from which
+  the symmetrized trbt was generated. That is, unsymmetrize_trbt(symmetrize_trbt(trbt)) = trbt.
+  
+  Parameters
+  ----------
+  trbt : np.ndarray
+      A three body tensor of shape (i, p, q, j, r, s, k, t, u).
+      
+  Returns
+  -------
+  np.ndarray
+      An unsymmetrized three body tensor of shape (i, p, q, j, r, s, k, t, u). 
+  """
+  
+  trbt_nonsym = np.zeros_like(trbt)
+  
+  nmodes = trbt.shape[0]
+  
+  for i in range(nmodes):
+    for j in range(i):
+      for k in range(j):
+        trbt_nonsym[i, :, :, j, :, :, k, :, :] = 6*trbt[i, :, :, j, :, :, k, :, :]
+  
+  return trbt_nonsym
 
 
 
