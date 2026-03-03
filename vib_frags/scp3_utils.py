@@ -79,7 +79,7 @@ def estimate_rank(trbt: jnp.ndarray, tol: float = 1e-8, multiplier: int = 2) -> 
 
 
 
-def fit_scp3(trbt: jnp.ndarray, rank: int, lr: float = 1e-2, 
+def fit_scp3(trbt: jnp.ndarray, rank: int | None = None, lr: float = 1e-2, 
              maxiter: int = 5000, initial_guess: dict = None, print_every: int = 500, seed: int = 42):
     """
     Optimizes the SCP3 factorization using JAX + Optax.
@@ -87,7 +87,7 @@ def fit_scp3(trbt: jnp.ndarray, rank: int, lr: float = 1e-2,
     Args:
         trbt: A 9D JAX array of shape 
               (nmodes, nmodals, nmodals, nmodes, nmodals, nmodals, nmodes, nmodals, nmodals)
-        rank: Number of terms in the decomposition.
+        rank: Number of terms in the decomposition. If initial guess is provided, this can be None.
         lr: Optimizer learning rate.
         maxiter: Number of training steps.
         print_every: Frequency of progress output.
@@ -119,18 +119,31 @@ def fit_scp3(trbt: jnp.ndarray, rank: int, lr: float = 1e-2,
     trbt_norm = jnp.sqrt(trbt_norm_sq)
     
     # 3. Initialize parameters
+    K_params = nmodals * (nmodals + 1) // 2
     key = jax.random.PRNGKey(seed)
     k1, k2 = jax.random.split(key)
-    
+
+    if rank is None and initial_guess is None:
+        raise ValueError("Either 'rank' must be specified or an 'initial_guess' must be provided.")
+        
     if initial_guess is not None:
         a_init = initial_guess['a']
         A_params_init = initial_guess['A']
+        rank_init = a_init.shape[0]
+        if rank_init < rank: # Pad with random values if initial guess rank is smaller
+            a_init = jnp.concatenate([a_init, jnp.zeros((rank - rank_init,), dtype=jnp.float64)])
+            A_params_init = jnp.concatenate([A_params_init, jnp.zeros((rank - rank_init, nmodes, K_params), dtype=jnp.float64)], axis=0)
+        elif rank_init > rank: # Truncate if initial guess rank is larger
+            raise ValueError(f"Rank used by the initial guess ({rank_init}) is larger than the target rank ({rank}). Truncation is not supported. Please provide an initial guess with rank less than or equal to the target rank.")
     else:
-        K_params = nmodals * (nmodals + 1) // 2
         a_init = jax.random.normal(k1, (rank,), dtype=jnp.float64)
         A_params_init = jax.random.normal(k2, (rank, nmodes, K_params), dtype=jnp.float64)
     
-    # 4. Variance scaling
+    # 4. Set the correct rank
+    if rank is None:
+        # If rank was not provided, it must have been inferred from initial_guess
+        rank = a_init.shape[0]
+
     A_init_matrix = get_symmetric_factors(A_params_init, rank, nmodes, nmodals)
     G_init = jnp.dot(A_init_matrix, A_init_matrix.T)
     term3_init = jnp.sum(jnp.outer(a_init, a_init) * (G_init ** 3))
