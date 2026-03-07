@@ -45,8 +45,8 @@ def pack_to_flat_params(nmodes, thetas_dict, Cs_dict, Nthc_list):
         C_list.append(C_i)
         
     # Stack the lists into flat JAX arrays
-    theta_flat = jnp.concatenate(theta_list, axis=0)
-    C_flat = jnp.concatenate(C_list, axis=0)
+    theta_flat = jnp.concatenate(theta_list, axis=1)
+    C_flat = jnp.concatenate(C_list, axis=1)
     
     return theta_flat, C_flat
 
