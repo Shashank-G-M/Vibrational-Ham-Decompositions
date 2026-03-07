@@ -20,28 +20,26 @@ def pack_to_flat_params(nmodes, thetas_dict, Cs_dict, Nthc_list):
     for i in range(nmodes):
         target_rank = Nthc_list[i]
         theta_i = thetas_dict[i]
+        C_i = Cs_dict[i] 
         
-        # Transpose C back to (old_rank, K)
-        C_i = Cs_dict[i].T 
-        
-        old_rank = theta_i.shape[0]
-        P_minus_1 = theta_i.shape[1]
-        K_dim = C_i.shape[1]
+        old_rank = theta_i.shape[1]
+        P_minus_1 = theta_i.shape[0]
+        K_dim = C_i.shape[0]
         
         # 1. Pad with zeros if the warm start rank is too small
         if old_rank < target_rank:
             pad_len = target_rank - old_rank
             
-            theta_pad = jnp.zeros((pad_len, P_minus_1))
-            theta_i = jnp.concatenate([theta_i, theta_pad], axis=0)
+            theta_pad = jnp.zeros((P_minus_1, pad_len))
+            theta_i = jnp.concatenate([theta_i, theta_pad], axis=1)
             
-            C_pad = jnp.zeros((pad_len, K_dim))
-            C_i = jnp.concatenate([C_i, C_pad], axis=0)
+            C_pad = jnp.zeros((K_dim, pad_len))
+            C_i = jnp.concatenate([C_i, C_pad], axis=1)
             
         # 2. Truncate if the warm start rank is somehow larger
         elif old_rank > target_rank:
-            theta_i = theta_i[:target_rank, :]
-            C_i = C_i[:target_rank, :]
+            theta_i = theta_i[:, :target_rank]
+            C_i = C_i[:, :target_rank]
             
         theta_list.append(theta_i)
         C_list.append(C_i)
@@ -53,28 +51,35 @@ def pack_to_flat_params(nmodes, thetas_dict, Cs_dict, Nthc_list):
     return theta_flat, C_flat
 
 
-
 # ------------------------------------------------------------
-# Hyperspherical parametrization (Batched)
+# Hyperspherical parametrization (Batched) - Transposed
 # ------------------------------------------------------------
 @jax.vmap
 def batched_angles_to_unit_vectors(theta_b):
     """
     Convert hyperspherical angles to unit vectors for a single mode.
     Vectorized over the 'mode' dimension.
+    Input shape: (P - 1, R)
+    Output shape: (P, R) - Columns are normalized unit vectors.
     """
-    R, P_minus_1 = theta_b.shape
+    # Swap the unpacked shape variables
+    P_minus_1, R = theta_b.shape
     P = P_minus_1 + 1
 
     components = []
     sin_prod = jnp.ones((R,))
 
     for p in range(P - 1):
-        components.append(sin_prod * jnp.cos(theta_b[:, p]))
-        sin_prod = sin_prod * jnp.sin(theta_b[:, p])
+        # Slice the row `p` across all `R` columns
+        components.append(sin_prod * jnp.cos(theta_b[p, :]))
+        sin_prod = sin_prod * jnp.sin(theta_b[p, :])
 
     components.append(sin_prod) 
-    return jnp.stack(components, axis=1)
+    
+    # Stack along axis=0 to produce a (P, R) matrix
+    return jnp.stack(components, axis=0)
+
+
 
 # ------------------------------------------------------------
 # Tensor reconstruction (Batched)
@@ -84,10 +89,9 @@ def batched_reconstruct_tensor(A_b, C_b):
     """
     Reconstruct the target tensor for a single mode.
     Vectorized over the 'mode' dimension.
-    C_b is assumed to be shape (rank, K), so we transpose it to (K, rank).
+    C_b is assumed to be shape (K, rank).
     """
-    C_T = C_b.T
-    return jnp.einsum("up,uq,ku->pqk", A_b, A_b, C_T)
+    return jnp.einsum("pu,qu,ku->pqk", A_b, A_b, C_T)
 
 
 # ------------------------------------------------------------
@@ -102,12 +106,12 @@ def loss_fn(flat_params, Z_batched, mode_idx, rank_idx, nmodes, max_rank, P, K, 
     theta_flat, C_flat = flat_params
     
     # 1. Initialize empty batched parameter tensors
-    theta_big = jnp.zeros((nmodes, max_rank, P-1))
-    C_big = jnp.zeros((nmodes, max_rank, K))
+    theta_big = jnp.zeros((nmodes, P-1, max_rank))
+    C_big = jnp.zeros((nmodes, K, max_rank))
     
     # 2. Differentiable scatter operation
-    theta_big = theta_big.at[mode_idx, rank_idx, :].set(theta_flat)
-    C_big = C_big.at[mode_idx, rank_idx, :].set(C_flat)
+    theta_big = theta_big.at[mode_idx, :, rank_idx].set(theta_flat)
+    C_big = C_big.at[mode_idx, :, rank_idx].set(C_flat)
     
     # 3. Batched forward pass
     A_big = batched_angles_to_unit_vectors(theta_big)
