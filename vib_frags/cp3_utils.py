@@ -12,32 +12,40 @@ from copy import copy
 # ------------------------------------------------------------
 def angles_to_unit_vectors(theta):
     """
-    Convert hyperspherical angles to unit vectors (row-wise).
+    Convert hyperspherical angles to unit vectors.
 
     Parameters
     ----------
-    theta : array, shape (R, P-1)
-        Each row contains the angular parameters of one unit vector in R^P.
+    theta : array, shape (P-1, R)
+        Angular parameters for R unit vectors in R^P.
 
     Returns
     -------
-    A : array, shape (R, P)
-        Each row is a unit-norm vector.
+    A : array, shape (P, R)
+        Columns are unit-norm vectors.
     """
-    R, P_minus_1 = theta.shape
-    P = P_minus_1 + 1
+    # Compute all sines and cosines simultaneously
+    sin_theta = jnp.sin(theta)
+    cos_theta = jnp.cos(theta)
 
-    components = []
-    sin_prod = jnp.ones((R,))
+    # Prefix products of sines along the coordinate axis (axis 0)
+    # This replaces the Python loop computing sin_prod
+    cumprod_sin = jnp.cumprod(sin_theta, axis=0)
 
-    for p in range(P - 1):
-        components.append(sin_prod * jnp.cos(theta[:, p]))
-        sin_prod = sin_prod * jnp.sin(theta[:, p])
+    # The factors multiplying the cosines are 1 for the first coordinate,
+    # and the cumulative product of sines for the subsequent ones.
+    # We prepend a row of 1s and drop the last row of the cumprod to shift it.
+    ones = jnp.ones((1, theta.shape[1]), dtype=theta.dtype)
+    sin_factors = jnp.concatenate([ones, cumprod_sin[:-1, :]], axis=0)
 
-    components.append(sin_prod)  # last coordinate
+    # Calculate the first P-1 coordinates
+    comps_first = sin_factors * cos_theta
 
-    # Stack as columns, then transpose to rows
-    return jnp.stack(components, axis=1)
+    # The last coordinate is the product of all sines (the very last row of cumprod)
+    last_comp = cumprod_sin[-1:, :]
+
+    # Concatenate along axis 0 to get final shape (P, R)
+    return jnp.concatenate([comps_first, last_comp], axis=0)
 
 
 # ------------------------------------------------------------
@@ -45,9 +53,9 @@ def angles_to_unit_vectors(theta):
 # ------------------------------------------------------------
 def reconstruct_tensor(A, C):
     """
-    Z_hat[p,q,k] = sum_u A[u,p] A[u,q] C[k,u]
+    Z_hat[p,q,k] = sum_u A[p,u] A[q,u] C[k,u]
     """
-    return jnp.einsum("up,uq,ku->pqk", A, A, C)
+    return jnp.einsum("pu,qu,ku->pqk", A, A, C)
 
 
 # ------------------------------------------------------------
@@ -80,29 +88,29 @@ def fit_cp_symmetric(
     window_size = 100
 ):
     """
-    Fit Z_{p,q,k} ≈ sum_u A_{u,p} A_{u,q} C_{k,u}
-    with ||A[u,:]|| = 1 enforced via angles.
+    Fit Z[p,q,k] = sum_u A[p,u] A[q,u] C[k,u]
+    with ||A[:,u]|| = 1 enforced via angles.
     """
     P, _, K = Z.shape
 
     # --- initialize parameters ---
     if initial_guess is None:
         key, k1, k2 = jax.random.split(key, 3)
-        theta = jax.random.uniform(k1, shape=(rank, P-1), minval=0.1, maxval=jnp.pi - 0.1)
+        theta = jax.random.uniform(k1, shape=(P-1,rank), minval=0.1, maxval=jnp.pi - 0.1)
         C = jax.random.normal(k2, shape=(K, rank))*0
     else:
         params = initial_guess
         theta_ = params[0]
         C_ = params[1]
-        if theta_.shape[0] < rank:
-            theta = jnp.zeros((rank, P-1))
-            theta = theta.at[:theta_.shape[0], :].set(theta_)
+        if theta_.shape[1] < rank:
+            theta = jnp.zeros((P-1,rank))
+            theta = theta.at[:, :theta_.shape[1]].set(theta_)
             C = jnp.zeros((K, rank))
             C = C.at[:, :C_.shape[1]].set(C_)
         else:
             theta = theta_
             C = C_
-    params = (theta, C)
+    params = (jnp.array(theta), jnp.array(C))
     
     # --- Adam optimizer ---
     optimizer = optax.adam(lr)
@@ -149,7 +157,7 @@ def fit_cp_symmetric(
 
     theta, C = params
 
-    return theta, C
+    return np.array(theta), np.array(C)
 
 
 
@@ -158,19 +166,19 @@ def fit_cp_symmetric(
 
 
 # ------------------------------------------------------------
-# Greedy loss function
+# Greedy loss function (experimental)
 # ------------------------------------------------------------
 def greedy_loss_fn(theta_u, Z_residual, rho):
     """
     Squared Frobenius norm loss.
     """
-    A_u = angles_to_unit_vectors(theta_u.reshape(1, -1))
+    A_u = angles_to_unit_vectors(theta_u)
     C_u = jnp.einsum("p,q,pqk->k", A_u[0], A_u[0], Z_residual)
     return -jnp.sum(jnp.abs(C_u))                                       #Negative sign is there to ensure that optimizer maximizes one-norm of C_u
 
 
 
-
+#Experimental!
 def fit_greedy_cp_symmetric(
     Z,
     rank,
@@ -184,7 +192,7 @@ def fit_greedy_cp_symmetric(
     window_size = 100
 ):
     """
-    Fit Z_{p,q,k} ≈ sum_u A_{u,p} A_{u,q} C_{k,u}
+    Fit Z_{p,q,k} ≈ sum_u A_{p,u} A_{q,u} C_{k,u}
     with ||A[u,:]|| = 1 enforced via angles.
     """
     P, _, K = Z.shape
@@ -192,13 +200,13 @@ def fit_greedy_cp_symmetric(
     # --- initialize parameters ---
     if initial_guess is None:
         key, k1, k2 = jax.random.split(key, 3)
-        theta = jax.random.uniform(k1, shape=(rank, P-1), minval=0.1, maxval=jnp.pi - 0.1)
+        theta = jax.random.uniform(k1, shape=(P-1,rank), minval=0.1, maxval=jnp.pi - 0.1)
     else:
         params = initial_guess
         theta_ = params[0]
-        if theta_.shape[0] < rank:
-            theta = jnp.zeros((rank, P-1))
-            theta = theta.at[:theta_.shape[0], :].set(theta_)
+        if theta_.shape[1] < rank:
+            theta = jnp.zeros((P-1,rank))
+            theta = theta.at[:, :theta_.shape[1]].set(theta_)
         else:
             theta = theta_
     
@@ -218,7 +226,7 @@ def fit_greedy_cp_symmetric(
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
-    final_theta = np.zeros((rank, P-1))
+    final_theta = np.zeros((P-1,rank))
     final_C = np.zeros((Z.shape[-1], rank))
 
     Z_residual = copy(Z)
@@ -244,4 +252,4 @@ def fit_greedy_cp_symmetric(
         error = 0.5*float(jnp.sqrt(jnp.sum((Z_residual)**2)))
         print (f"Rank: {u}, Error: {error}")
 
-    return final_theta, final_C
+    return np.array(final_theta), np.array(final_C)
