@@ -91,7 +91,7 @@ def batched_reconstruct_tensor(A_b, C_b):
     Vectorized over the 'mode' dimension.
     C_b is assumed to be shape (K, rank).
     """
-    return jnp.einsum("pu,qu,ku->pqk", A_b, A_b, C_T)
+    return jnp.einsum("pu,qu,ku->pqk", A_b, A_b, C_b)
 
 
 # ------------------------------------------------------------
@@ -110,8 +110,8 @@ def loss_fn(flat_params, Z_batched, mode_idx, rank_idx, nmodes, max_rank, P, K, 
     C_big = jnp.zeros((nmodes, K, max_rank))
     
     # 2. Differentiable scatter operation
-    theta_big = theta_big.at[mode_idx, :, rank_idx].set(theta_flat)
-    C_big = C_big.at[mode_idx, :, rank_idx].set(C_flat)
+    theta_big = theta_big.at[mode_idx, :, rank_idx].set(theta_flat.T)
+    C_big = C_big.at[mode_idx, :, rank_idx].set(C_flat.T)
     
     # 3. Batched forward pass
     A_big = batched_angles_to_unit_vectors(theta_big)
