@@ -7,3 +7,5 @@ midascpp_results/
 *.pkl
 *.npz
 *.txt
+*.ipynb
+*.pdf
