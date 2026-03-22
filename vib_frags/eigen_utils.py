@@ -839,7 +839,7 @@ def Ham_on_state_numba(obtD, obtU, tbtD, tbtU, tbt_eigs, state, nmodes, nmodals)
 
 
 
-def get_eigen_state_numba(obt, tbt, tbt_cutoff = 1e-5, nfrags = None, which='SA', max_iter = 1000, tol = 1e-5, ncv=None):
+def get_eigen_state_numba(obt, tbt, tbt_cutoff = 1e-5, nfrags = None, which='SA', k=1, max_iter = 1000, tol = 1e-5, ncv=None):
   """
   Function to obtain an eigenstate of the Hamiltonian defined by the input one, two, and/or three body tensor.
 
@@ -929,7 +929,7 @@ def get_eigen_state_numba(obt, tbt, tbt_cutoff = 1e-5, nfrags = None, which='SA'
   # 3. Solve for the Ground State
   print("Starting iterative solver...")
   print_memory_usage("Before eigsh")
-  eigenvalues, eigenvectors = eigsh(A_op, k=1, which=which, maxiter=max_iter, tol=tol, ncv=ncv)
+  eigenvalues, eigenvectors = eigsh(A_op, k=k, which=which, maxiter=max_iter, tol=tol, ncv=ncv)
   print_memory_usage("After eigsh")
 
   # print(f"Ground State Energy: {eigenvalues[0]:.6f}")
@@ -937,5 +937,7 @@ def get_eigen_state_numba(obt, tbt, tbt_cutoff = 1e-5, nfrags = None, which='SA'
   del U0, D0, Us, Ds, G_val, G_mat, G_vec, G_vec_ten, A_op
   gc.collect()
 
-
-  return eigenvalues[0], eigenvectors
+  if k == 1:
+    return eigenvalues[0], eigenvectors
+  else:
+    return eigenvalues, eigenvectors
