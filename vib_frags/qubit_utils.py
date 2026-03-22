@@ -149,7 +149,8 @@ def get_QOP_of_Pauli_LCU(C = None, obt = None, tbt = None, trbt = None, cutoff =
     cutoff: float (optional)
       cutoff to prune the tensor elements. Defaults to 1e-4 (appropriate for cm-1 units)
     opt: bool (optional)
-      if True, returns QubitOperator corresponding to optimal Pauli LCU.
+      If True, returns QubitOperator corresponding to optimal Pauli LCU under the assumption that the provided
+      one and two body tensors are the modified ones i.e. the ones obtained by integrating out the identities in the LCU.
     
     Returns
     -------
@@ -238,7 +239,7 @@ def get_QOP_of_Pauli_LCU(C = None, obt = None, tbt = None, trbt = None, cutoff =
         for (i,p,q) in nonzero_index_iter(obt):
             coeff = obt[i,p,q]
             if coeff:
-                obt_op += coeff * Q_ops[(i,p,q)]
+                obt_op += coeff/2 * Q_ops[(i,p,q)]
 
     # For tbt: iterate nonzero entries; use pair cache
     if tbt is not None:
@@ -251,7 +252,7 @@ def get_QOP_of_Pauli_LCU(C = None, obt = None, tbt = None, trbt = None, cutoff =
             if prod is None:
                 prod = Q_ops[(i,p,q)] * Q_ops[(j,r,s)]
                 pair_cache[key] = prod
-            tbt_op += coeff * prod
+            tbt_op += coeff/4 * prod
 
     # For trbt: iterate nonzero entries; reuse pair_cache for first two
     if trbt is not None:
