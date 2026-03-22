@@ -839,7 +839,7 @@ def Ham_on_state_numba(obtD, obtU, tbtD, tbtU, tbt_eigs, state, nmodes, nmodals)
 
 
 
-def get_eigen_state_numba(obt, tbt, tbt_cutoff = 1e-5, nfrags = None, which='SA', k=1, max_iter = 1000, tol = 1e-5, ncv=None):
+def get_eigen_state_numba(obt, tbt, tbt_cutoff = 1e-5, nfrags = None, which='SA', k=1, max_iter = 1000, tol = 1e-5, ncv=None, verbose=False):
   """
   Function to obtain an eigenstate of the Hamiltonian defined by the input one, two, and/or three body tensor.
 
@@ -856,7 +856,7 @@ def get_eigen_state_numba(obt, tbt, tbt_cutoff = 1e-5, nfrags = None, which='SA'
 
   Returns
   -------
-  float
+  np.narray() or float
     Ground state energy
   np.ndarray()
     Ground state wavefunction
@@ -927,10 +927,12 @@ def get_eigen_state_numba(obt, tbt, tbt_cutoff = 1e-5, nfrags = None, which='SA'
   A_op = LinearOperator((dim, dim), matvec=matvec_wrapper, dtype=np.float64)
 
   # 3. Solve for the Ground State
-  print("Starting iterative solver...")
-  print_memory_usage("Before eigsh")
+  if verbose:
+    print("Starting iterative solver...")
+    print_memory_usage("Before eigsh")
   eigenvalues, eigenvectors = eigsh(A_op, k=k, which=which, maxiter=max_iter, tol=tol, ncv=ncv)
-  print_memory_usage("After eigsh")
+  if verbose:
+    print_memory_usage("After eigsh")
 
   # print(f"Ground State Energy: {eigenvalues[0]:.6f}")
 
