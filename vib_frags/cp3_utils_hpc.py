@@ -140,7 +140,7 @@ def build_index_arrays(Nthc_list):
     return jnp.array(mode_idx), jnp.array(rank_idx)
 
 # ------------------------------------------------------------
-# Driver Routine for Batched Fitting (Corrected State Tracking)
+# Driver Routine for Batched Fitting 
 # ------------------------------------------------------------
 def fit_cp_batched(
     Z_batched,
