@@ -310,9 +310,10 @@ def Ham_on_state(obtD, obtU, tbtD, tbtU, tbt_eigs, flt_state, nmodes, nmodals):
 
 
 
-def get_ground_state(obt, tbt, tbt_cutoff = 1e-3, max_iter = 10000, tol = 1e-3, lr=1e-3):
+def get_top_eigen_state(obt, tbt, tbt_cutoff = 1e-3, max_iter = 10000, tol = 1e-3, lr=1e-3):
   """
-  Function to obtain the ground state of the Hamiltonian defined by the input one, two, and/or three body tensor.
+  Function to obtain the top (highest excited) eigen state of the Hamiltonian defined by the input one, two, and/or three body tensor. This function uses JAX's LOBPCG.
+  Although not the best use, passing negated one and two body tensors gives ground eigen state multiplied by -1.
 
   Parameters
   ----------
@@ -403,6 +404,7 @@ def get_ground_state(obt, tbt, tbt_cutoff = 1e-3, max_iter = 10000, tol = 1e-3, 
   print ("Number of lobpcg iterations: ", history)
   return vals, vecs
 
+  #Alter native implementation based on variational minimization
   obt_mat = tu.obt2_proj_mat(obt)
   tbt_mat = tu.tbt2_proj_mat(tbt)
   H_mat = obt_mat + tbt_mat
