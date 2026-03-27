@@ -8,8 +8,6 @@ from opt_einsum import contract
 
 
 
-
-
 def transpose_nbt(nbt):
     """
     Permutes axes of an n body tensor from (i, j, ..., p, r, ..., q, s, ...) to (i, p, q, j, r, s, ...). i, j index modes, 
@@ -343,6 +341,8 @@ def symmetrize_trbt(trbt, force_sym = False):
   np.ndarray
       A symmetrized three body tensor of shape (i, p, q, j, r, s, k, t, u).
   """
+  if trbt is None:
+    return None
 
   sym_tbt = np.zeros_like(trbt)
 
@@ -1043,17 +1043,6 @@ def get_opt_Pauli_LCU_tensors(C = None, obt = None, tbt = None, trbt = None):
       two-body tensor of the Hamiltonian of shape (nmodes, nmodals, nmodals,nmodes, nmodals, nmodals)
     trbt: np.array (optional)
       three-body tensor of the Hamiltonian of shape (nmodes, nmodals, nmodals,nmodes, nmodals, nmodals,nmodes, nmodals, nmodals)  
-    
-    Returns
-    -------
-    openfermion.QubitOperator
-        QubitOperator corresponding to the new constant term
-    openfermion.QubitOperator
-        QubitOperator corresponding to the new obt
-    openfermion.QubitOperator
-        QubitOperator corresponding to the new tbt
-    openfermion.QubitOperator
-        QubitOperator corresponding to the new trbt
     '''
     
     if all(ten is None for ten in (obt, tbt, trbt)):
@@ -1092,7 +1081,7 @@ def get_opt_Pauli_LCU_tensors(C = None, obt = None, tbt = None, trbt = None):
 
 
 
-def opt_Pauli_LCU_1norm(obt,tbt,trbt,ret_const=False):
+def opt_Pauli_LCU_1norm(obt,tbt,trbt=None,ret_const=False):
     '''
     Obtian the induced one-norm of the optimal Pauli LCU for the Hamiltonian defined by the given tensors. Refer to the overleaf document for more information.
 
@@ -1202,50 +1191,3 @@ def get_opt_THC_LCU_tensors(C = None, obt = None, tbt = None, trbt = None, zeta 
 
 
 
-
-
-
-
-
-
-
-
-
-def THC_2_mat(xi, zeta):
-    """
-    Convert tbt defined by THC parameters to matrix representation in the one excitation per mode subspace.
-
-    Parameters
-    ----------
-    xi : np.array
-        THC obrital rotation matrix of shape (nmodes, nthc, nmodals)
-    zeta : np.array
-        THC zeta tensor (nmodes, nmodes, nthc, nthc) = (i,j,u,v)
-
-    Returns
-    -------
-    sp.sparse.csc_matrix
-        Two body tensor as a scipy sparse matrix of shape (nmodals^nmodes, nmodals^nmodes).
-    """
-
-    
-    nmodes, nthc, nmodals = xi.shape
-    id_mat = sp.sparse.identity(nmodals**nmodes, dtype=float, format='csc')
-
-    tbt_mat = sp.sparse.csc_matrix((nmodals**nmodes, nmodals**nmodes), dtype=float)
-
-    obts = np.einsum('iup, iuq -> uipq', xi, xi)
-    for i in range(nmodes):
-        for u in range (nthc):
-            obtiu = np.zeros((nmodes, nmodals, nmodals), dtype=float)
-            obtiu[i] = obts[u, i]
-            obtiu_mat = obt2_proj_mat(obtiu)
-            for j in range(nmodes):
-                for v in range (nthc):
-                    obtjv = np.zeros((nmodes, nmodals, nmodals), dtype=float)
-                    obtjv[j] = obts[v, j]
-                    obtjv_mat = obt2_proj_mat(obtjv)
-                    if i != j:
-                        tbt_mat += 0.25*zeta[i, j, u, v]*(id_mat - 2*obtiu_mat)*(id_mat - 2*obtjv_mat)
-
-    return tbt_mat        
