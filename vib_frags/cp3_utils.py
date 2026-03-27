@@ -108,8 +108,8 @@ def fit_cp_symmetric(
             C = jnp.zeros((K, rank))
             C = C.at[:, :C_.shape[1]].set(C_)
         else:
-            theta = theta_
-            C = C_
+            theta = theta_[:, :rank]
+            C = C_[:, :rank]
     params = (jnp.array(theta), jnp.array(C))
     
     # --- Adam optimizer ---
