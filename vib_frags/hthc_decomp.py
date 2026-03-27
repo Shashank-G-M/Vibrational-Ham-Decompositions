@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 import jax
 from jax import numpy as jnp
 from jax import grad, jit, vmap
@@ -7,7 +8,9 @@ import optax
 from functools import partial
 import numpy as np
 from copy import copy
-from .tensor_utils import symmetrize_tbt, symmetrize_trbt
+from .tensor_utils import symmetrize_tbt, symmetrize_trbt, obt2_proj_mat
+from .bliss_pauli import build_scatter_indices, pack_minimal_bliss_params, unpack_minimal_bliss_params_jax, get_bliss_hamiltonian_jax
+from .bliss_utils import initialize_bliss_tensors
 
 # Forcibly disable 64-bit execution
 jax.config.update("jax_enable_x64", True)
@@ -16,20 +19,10 @@ jax.config.update("jax_enable_x64", True)
 # jax.config.update("jax_default_matmul_precision", "tensorfloat32")
 
 
-def _get_BLISS_sizes(num_ob_syms, Norbs):
-    avec_len = num_ob_syms
-    bvec_len = int(num_ob_syms * (num_ob_syms+1)/2)
-    ob_mat_num_params = int(Norbs*(Norbs+1)/2)
-    dvec_len = int(num_ob_syms * (num_ob_syms-1)/2)
-
-    return avec_len, bvec_len, ob_mat_num_params, dvec_len
-
-
-
 def _symmetrize_zeta(zeta):
     zeta_sym = (
         zeta + 
-        np.transpose(zeta, (1,0,3,2))) / 2.0
+        np.transpose(zeta, (1,0,3,2))) /2
     return zeta_sym
 
 
@@ -47,17 +40,58 @@ def _symmetrize_gamma(gamma):
 
 
 
+def zeta_dict_2_ten(zeta = dict):
+    """
+    Convert zeta given as a dictionary to zeta array. Note that if zeta_dict uses unsymmetrized mode-pairs, 
+    the resulting zeta tensor will also be unsymmetrized
+
+    zeta: dictionary
+    """
+    
+    #Find Rthc
+    Rthc = 0
+    for (i,j), Zij in zeta.items():
+        Rthc_i = max(Zij.shape)
+        Rthc = Rthc_i if Rthc_i > Rthc else Rthc
+    
+    nmodes = np.max(np.array(list(zeta.keys()))) + 1
+    zeta_ten = np.zeros((nmodes, nmodes, Rthc, Rthc))
+    for (i,j), Zij in zeta.items():
+        zeta_ten[i,j][:Zij.shape[0], :Zij.shape[1]] = Zij
+    return zeta_ten
+
+
+def theta_dict_2_ten(theta = dict):
+    """
+    Convert theta given as a dictionary to theta array.
+
+    theta: dictionary
+    nmodals: Number of modals
+    """
+    #Find Rthc
+    Rthc = 0
+    for i, th_i in theta.items():
+        Nthc_i = th_i.shape[-1]
+        Rthc = Nthc_i if Nthc_i > Rthc else Rthc
+    
+    nmodes = max(list(theta.keys())) + 1
+    nmodals_1 = theta[0].shape[0]
+    theta_ten = np.zeros((nmodes, nmodals_1, Rthc))
+    for i, th_i in theta.items():
+        theta_ten[i][:, :th_i.shape[-1]] = th_i
+    return theta_ten
+
+
 
 def unfold_vib_hthc(theta, zeta, gamma=None, trbt_is_None=True):
     Nmode = len(theta)
-    Nmodal = theta[0].shape[-1] + 1
+    Nmodal = theta[0].shape[0] + 1
 
     tbt_thc = np.zeros((Nmode, Nmodal, Nmodal, Nmode, Nmodal, Nmodal))
     xupq = {}
     for i, theta_i in theta.items():
-        xi_i = angles_to_unit_vectors(theta_i.T)
-        xi_i = xi_i.T
-        xupq[i] = np.einsum("Up,Uq->Upq", xi_i, xi_i)
+        xi_i = angles_to_unit_vectors(theta_i)
+        xupq[i] = np.einsum("pU,qU->Upq", xi_i, xi_i)
 
     for (i,j), Zij in zeta.items():
         tbt_thc[i,:,:,j,:,:] = np.einsum('UV,Upq,Vrs->pqrs', Zij, xupq[i], xupq[j])
@@ -67,6 +101,102 @@ def unfold_vib_hthc(theta, zeta, gamma=None, trbt_is_None=True):
     else:
         trbt_thc = None
     return tbt_thc, trbt_thc
+
+
+
+
+
+def theta_ten_to_unit_vectors(theta_ten):
+    """
+    Convert theta given as a (nmodes, nmodals-1, nthc) array to corresponding normalized vectors
+    """
+    nmodes, nmodals_1, Rthc = theta_ten.shape
+    xi = np.zeros((nmodes, nmodals_1+1, Rthc))
+    for i in range(nmodes):
+        xi[i] = angles_to_unit_vectors(theta_ten[i])
+    return xi
+
+
+
+
+
+
+
+def THC_2_mat(xi, zeta):
+    """
+    Convert tbt defined by THC parameters to matrix representation in the one excitation per mode subspace.
+
+    Parameters
+    ----------
+    xi : np.array
+        THC obrital rotation matrix of shape (nmodes, nmodals, nthc)
+    zeta : np.array
+        THC zeta tensor (nmodes, nmodes, nthc, nthc) = (i,j,u,v)
+
+    Returns
+    -------
+    sp.sparse.csc_matrix
+        Two body tensor as a scipy sparse matrix of shape (nmodals^nmodes, nmodals^nmodes).
+    """
+
+    
+    nmodes, nmodals, nthc = xi.shape
+    id_mat = sp.sparse.identity(nmodals**nmodes, dtype=float, format='csc')
+
+    tbt_mat = sp.sparse.csc_matrix((nmodals**nmodes, nmodals**nmodes), dtype=float)                     #Zero matrix
+
+    obts = np.einsum('ipu, iqu -> iupq', xi, xi)
+    for i in range(nmodes):
+        for u in range (nthc):
+            obtiu = np.zeros((nmodes, nmodals, nmodals), dtype=float)
+            obtiu[i] = obts[i, u]
+            obtiu_mat = obt2_proj_mat(obtiu)
+            for j in range(nmodes):
+                for v in range (nthc):
+                    obtjv = np.zeros((nmodes, nmodals, nmodals), dtype=float)
+                    obtjv[j] = obts[j, v]
+                    obtjv_mat = obt2_proj_mat(obtjv)
+                    if i != j:
+                        tbt_mat += 0.25*zeta[i, j, u, v]*(id_mat - 2*obtiu_mat)*(id_mat - 2*obtjv_mat)
+
+    return tbt_mat        
+
+
+
+  
+
+
+
+def full_THC_2_mat(H1, theta, zeta):
+    """
+    Obtain sparse matrix in the physical subspace of the full two mode coupling Hamiltonian after THC.
+    This function can be used to test the THC factorization math by comparing the output with the unfactorized Hamiltonian matrix
+    H1: one body tensor of the original Hamiltonian
+    theta: THC angles stored as dictionary
+    zeta: THC core tensor stored as dictionary with keys  (i,j) where i > j.
+    """
+    
+    #tensor reconstruction
+    H2_hthc_unsym,_ = unfold_vib_hthc(theta, zeta)
+    H2_hthc = symmetrize_tbt(H2_hthc_unsym)
+
+    #Hthc mat
+    theta_ten = theta_dict_2_ten(theta)
+    xi = theta_ten_to_unit_vectors(theta_ten)
+    zeta_ten = zeta_dict_2_ten(zeta)
+
+    H1_hthc = H1 + np.einsum('ipqjrr -> ipq', H2_hthc)
+    H1_hthc_mat = obt2_proj_mat(H1_hthc)
+    
+    H2_hthc_mat = THC_2_mat(xi, zeta_ten)
+    
+    c_hthc = - (1/4)*np.einsum('ippjrr -> ', H2_hthc)
+    c_hthc_mat = c_hthc*sp.sparse.identity(H1_hthc_mat.shape[0], format='csc')
+
+    H_hthc_mat = c_hthc_mat + H1_hthc_mat + H2_hthc_mat
+
+    return H_hthc_mat
+
 
 
 
@@ -138,41 +268,39 @@ def _tbt_error(theta, zeta, tbt_full):
     # theta shape: (M, N-1, R)
     # zeta shape:  (M, M, R, R) -> axes: (i, j, U, V)
     
-    # 1. Vectorized generation of xupq  
+    # Vectorized generation of xupq  
     # Apply function across all M blocks simultaneously
     xi = batched_angles_to_vectors(theta) 
     
     # Create xupq for all M blocks at once. 
     xupq = jnp.einsum("MpU,MqU->MUpq", xi, xi, optimize=True)
 
-    # 2. First Contraction: Contract U between zeta and xupq
+    # First Contraction: Contract U between zeta and xupq
     # zeta: (i, j, U, V), xupq: (i, U, p, q) -> intermediate: (i, j, V, p, q)
     intermediate = jnp.einsum('ijUV,iUpq->ijVpq', zeta, xupq, optimize=True)
 
-    # 3. Second Contraction: Contract V between intermediate and xupq
+    # Second Contraction: Contract V between intermediate and xupq
     # intermediate: (i, j, V, p, q), xupq: (j, V, r, s) 
     # We output to (i, p, q, j, r, s) to perfectly match the layout of tbt_full!
     recon = jnp.einsum('ijVpq,jVrs->ipqjrs', intermediate, xupq, optimize=True)
 
-    
-
-    # 4. Global Loss Calculation
+    # Global Loss Calculation
     # We subtract the entire reconstructed 6D tensor from the target at once.
     loss = jnp.sqrt(jnp.sum((tbt_full - recon)**2))
     
     return loss
 
 
-@partial(jax.jit, static_argnums=()) 
+@partial(jax.jit, static_argnums=(3)) 
 def _tbt_error_opt(theta, zeta, tbt_full, norm_tbt_sq):
     # theta shape: (M, N-1, R)
     # zeta shape:  (M, M, R, R) -> axes: (i, j, U, V)
     
-    # 1. Vectorized generation of xupq
+    # Vectorized generation of xupq
     xi = batched_angles_to_vectors(theta) 
     xupq = jnp.einsum("MpU,MqU->MUpq", xi, xi, optimize=True)
 
-    # 2. Flatten spatial dimensions for efficient BLAS execution
+    # Flatten spatial dimensions for efficient BLAS execution
     M, R, p, q = xupq.shape
     P = p * q
     x_flat = xupq.reshape(M, R, P)
@@ -180,13 +308,13 @@ def _tbt_error_opt(theta, zeta, tbt_full, norm_tbt_sq):
     # Flatten target tensor: (M, p, q, M, r, s) -> (M, P, M, P)
     tbt_flat = tbt_full.reshape(M, P, M, P)
 
-    # 3. Term 2: The Cross Term (-2 <T, R>)
+    # Term 2: The Cross Term (-2 <T, R>)
     # Project T onto the x basis step-by-step to avoid large memory allocations
     Y = jnp.einsum('iPjQ,iUP->ijUQ', tbt_flat, x_flat, optimize=True)
     W = jnp.einsum('ijUQ,jVQ->ijUV', Y, x_flat, optimize=True)
     cross_term = jnp.einsum('ijUV,ijUV->', zeta, W, optimize=True)
 
-    # 4. Term 3: The Norm of the Reconstruction (||R||^2)
+    # Term 3: The Norm of the Reconstruction (||R||^2)
     # Calculate the spatial overlap (Gram) matrix first
     S = jnp.einsum('iUP,iAP->iUA', x_flat, x_flat, optimize=True)
     
@@ -195,7 +323,7 @@ def _tbt_error_opt(theta, zeta, tbt_full, norm_tbt_sq):
     Z_inter = jnp.einsum('ijUV,jVB->ijUB', zeta, S, optimize=True)
     R_norm_sq = jnp.einsum('ijUB,ijAB,iUA->', Z_inter, zeta, S, optimize=True)
 
-    # 5. Global Loss Calculation
+    # Global Loss Calculation
     # ||T - R||^2 = ||T||^2 - 2<T,R> + ||R||^2
     loss_sq = norm_tbt_sq - 2.0 * cross_term + R_norm_sq
     
@@ -224,7 +352,7 @@ def ten_norm(ten, fro=True):
 
 
 
-def hthc_vib_one_norm(kappa, tbt_full, trbt_full, zeta, gamma, obt_is_none, trbt_is_None, Rthc):
+def hthc_vib_one_norm(obt_full, tbt_full, trbt_full, zeta, gamma, obt_is_none, trbt_is_None, Rthc):
     #This function assumes the input zeta is a dictionary with keys as tuples of mode indices
     lambda_1 = 0.0
     sym_tbt_full = symmetrize_tbt(tbt_full)
@@ -232,14 +360,11 @@ def hthc_vib_one_norm(kappa, tbt_full, trbt_full, zeta, gamma, obt_is_none, trbt
         sym_trbt_full = symmetrize_trbt(trbt_full)
 
     if obt_is_none == False:
-        kappa = kappa + (1)*np.einsum('ipqjrr -> ipq', sym_tbt_full)
+        kappa = obt_full + (1)*np.einsum('ipqjrr -> ipq', sym_tbt_full)
         if trbt_is_None == False:
             kappa += (3/4)*np.einsum('ipqjrrktt -> ipq', sym_trbt_full)
         Nmode = kappa.shape[0]
-        for i in range (Nmode):                                 #Diagonalize obt in each mode
-            kappa_i = kappa[i]
-            D = np.linalg.eigvalsh(kappa_i)
-            lambda_1 += (1/2)*np.sum(np.abs(D))
+        lambda_1 = (1/2)*np.sum(np.abs(np.linalg.eigvalsh(kappa)))
 
     zeta_tilde = np.zeros((Nmode, Nmode, Rthc, Rthc))
     for (i,j), Zij in zeta.items():
@@ -266,26 +391,21 @@ def hthc_vib_one_norm(kappa, tbt_full, trbt_full, zeta, gamma, obt_is_none, trbt
 
 
 
-@partial(jax.jit, static_argnums=(5,6))
-def _hthc_vib_one_norm(kappa, tbt_full, trbt_full, zeta, gamma, obt_is_none, trbt_is_None):
-    #This function assumes the input zeta is an array obtained by padding zeros to the original zeta dictionary
+@partial(jax.jit, static_argnums=(5))
+def _hthc_vib_one_norm(obt_full, tbt_full, trbt_full, zeta, gamma, trbt_is_None):
+    # This function assumes the input zeta is an array obtained by padding zeros to the original zeta dictionary
+    # Additionally, we assume tbt_full is symmetrized
     lambda_1 = 0.0
-    sym_tbt_full = (tbt_full + jnp.transpose(tbt_full, (3, 4, 5, 0, 1, 2)))/2
-    if obt_is_none == False:
-        kappa = kappa + (1)*jnp.einsum('ipqjrr -> ipq', sym_tbt_full)
-        if trbt_is_None == False:
-            kappa += (3/4)*jnp.einsum('ipqjrrktt -> ipq', trbt_full)
-        Nmode = kappa.shape[0]
-        for i in range (Nmode):                                 #Diagonalize obt in each mode
-            kappa_i = kappa[i]
-            D = jnp.linalg.eigvalsh(kappa_i)
-            lambda_1 += (1/2)*jnp.sum(jnp.abs(D))
+    kappa = obt_full + (1)*jnp.einsum('ipqjrr -> ipq', tbt_full)
+    if trbt_is_None == False:
+        kappa += (3/4)*jnp.einsum('ipqjrrktt -> ipq', trbt_full)
+    lambda_1 = (1/2)*jnp.sum(jnp.abs(jnp.linalg.eigvalsh(kappa)))
 
     zeta_tilde = zeta
     if trbt_is_None == False:
         zeta_tilde += (3/2)*jnp.einsum('ijkUVW -> ijUV', gamma)
 
-    # Factor of 1/4 below comes from converting number operator to reflection. Note, this zeta is unsymmetrized but does not change the one-norm expression
+    # Factor of 1/4 below comes from converting number operator to reflection. Note, whether zeta is symmetrized or unsymmetrized, it does not change the one-norm expression here.
     lambda_2 = (1/4)*jnp.sum(jnp.abs(zeta_tilde))
 
 
@@ -298,100 +418,147 @@ def _hthc_vib_one_norm(kappa, tbt_full, trbt_full, zeta, gamma, obt_is_none, trb
 
 
 
-@partial(jax.jit, static_argnums=(1,2,3,4,5,6,7))
-def _extract_from_x_vec(x_vec, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, trbt_is_None, indices):
-    theta_1d, zeta_1d = jnp.split(x_vec, [theta_size])
+@partial(jax.jit, static_argnums=(2,3,4,5,6,7))
+def _extract_from_x_vec(x_vec, indices, split_locs, Rthc, Nmode, Nmodal, bliss, trbt_is_None):
+    theta_1d, zeta_1d, rest_1d = jnp.split(x_vec, [split_locs[0], split_locs[0] + split_locs[1]])
 
-    # Initialize full arrays of zeros
+    # Initialize full arrays of zeros for theta and zeta
     theta = jnp.zeros((Nmode, Nmodal-1, Rthc))
     zeta = jnp.zeros((Nmode, Nmode, Rthc, Rthc))
-    theta_indices, zeta_indices = indices
+    theta_indices, zeta_indices = indices['theta'], indices['zeta']
     
     # Scatter the 1D values into their specific structured locations
     theta = theta.at[theta_indices].set(theta_1d)
     zeta = zeta.at[zeta_indices].set(zeta_1d)
 
+    # Do similar operations if trbt is not None
     if trbt_is_None == False:
-        G_fin = Z_fin + Nmode**3*Nthc**3
-        gamma = x_vec[Z_fin:G_fin].reshape((Nmode, Nmode, Nmode, Nthc, Nthc, Nthc))
-        gamma = _symmetrize_gamma(gamma)
-        Z_fin = G_fin
+        gamma_1d, rest_1d = jnp.split(rest_1d, [split_locs[2]])
+        gamma = jnp.zeros((Nmode, Nmode, Nmode, Rthc, Rthc, Rthc))
+        gamma_indices = indices['gamma']
+        gamma = gamma.at[gamma_indices].set(gamma_1d)
+        bl_idx = 3
     else:
-        gamma = None           
+        gamma = None   
+        bl_idx = 2
 
-    if include_bliss:
-        avec_len, bvec_len, ob_mat_num_params, dvec_len = _get_BLISS_sizes(num_ob_syms, Nmodal)
-        a_fin = Z_fin + avec_len
-        avec = x_vec[Z_fin:a_fin]
-
-        b_fin = a_fin + bvec_len
-        bvec = x_vec[a_fin:b_fin]
-
-        beta_mats_fin = b_fin + ob_mat_num_params*num_ob_syms
-        beta_mats_params = x_vec[b_fin:beta_mats_fin].reshape((num_ob_syms, ob_mat_num_params))
-
-        dvec = x_vec[beta_mats_fin:]
+    # Extract and unpack bliss parameters if present
+    if bliss:
+        re_scatter_mapppings = {k:(v, split_locs[bl_idx+i]) for i,(k,v) in enumerate(indices['bliss'].items())}
+        bliss_params = unpack_minimal_bliss_params_jax(rest_1d, re_scatter_mapppings)
     else:
-        avec, bvec, beta_mats_params, dvec = None, None, None, None
+        bliss_params = None
 
-    return theta, zeta, gamma, avec, bvec, beta_mats_params, dvec
-
-
+    return theta, zeta, gamma, bliss_params 
 
 
-@partial(jax.jit, static_argnums=(6,7,8,9,10,11,12,13,16,17))
-def _cost_vib(x_vec, obt_full, tbt_full, trbt_full, ob_sym_mats, ob_sym_vals, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, obt_is_none, trbt_is_None, rho, indices, regularize=True, fro=True, norm_tbt_sq=0.0):
-    theta, zeta, gamma, avec, bvec, beta_mats_params, dvec = _extract_from_x_vec(x_vec, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, trbt_is_None, indices)
+
+@partial(jax.jit, static_argnums=(7, 8, 9, 10))
+def _separate_costs(obt_full, tbt_full, trbt_full, theta, zeta, gamma, bliss_params, bliss, trbt_is_None, regularize, norm_tbt_sq):
+    if bliss:
+        mc = 2 if trbt_is_None else 3
+        nmode, nmodal = tbt_full.shape[:2]
+        c_new, obt_new, tbt_new, trbt_new = get_bliss_hamiltonian_jax(nmode, nmodal, obt_full, tbt_full, trbt_full, bliss_params, mc)
+        fro_norm = _tbt_error(theta, zeta, tbt_new)*jnp.sqrt(2)                        #The sqrt(2) factor is used since we are using symmetrized tensors, but want the error for approximating unsymmetrized tensor.
+        if regularize:
+            one_norm = sum(_hthc_vib_one_norm(obt_new, tbt_new, trbt_new, zeta, gamma, trbt_is_None))
+        else:
+            one_norm = None
+    else:
+        fro_norm = _tbt_error_opt(theta, zeta, tbt_full, norm_tbt_sq)*jnp.sqrt(2)      #The sqrt(2) factor is used since we are using symmetrized tensors, but want the error for approximating unsymmetrized tensor.
+        if regularize:
+            one_norm = sum(_hthc_vib_one_norm(obt_full, tbt_full, trbt_full, zeta, gamma, trbt_is_None))
+        else:
+            one_norm = None
+
+    # Trbt cost needs to be implemented
+    return fro_norm, one_norm      
+
+
+
+
+
+@partial(jax.jit, static_argnums=(5,6,7,8,9,10,11,12,13))
+def _cost_vib(x_vec, obt_full, tbt_full, trbt_full, indices, split_locs, Rthc, Nmode, Nmodal, bliss, trbt_is_None, rho, regularize, norm_tbt_sq):
+    theta, zeta, gamma, bliss_params = _extract_from_x_vec(x_vec, indices, split_locs, Rthc, Nmode, Nmodal, bliss, trbt_is_None)
     
-    # # --- REPLACED _tbt_error WITH _tbt_error_opt ---
-    tot_cost = _tbt_error_opt(theta, zeta, tbt_full, norm_tbt_sq)
-
-    # tot_cost = _tbt_error_stable_opt(theta, zeta, tbt_full)
-    
-    # if include_bliss:
-    #     obt_killer, tbt_killer = _BLISS_corrections(avec, bvec, beta_mats_params, dvec, Nmodal, ob_sym_mats, ob_sym_vals, num_ob_syms)
-    #     tbt_BI = tbt_full - tbt_killer
-    #     if obt_is_none:
-    #         obt_tilde = None
-    #     else:
-    #         obt_tilde = obt_full - obt_killer + jnp.einsum("ipqjrr->ipq", tbt_BI)
-    # else:
-    #     tbt_BI = tbt_full
-    #     if obt_is_none:
-    #         obt_tilde = None
-    #     else:
-    #         obt_tilde = obt_full - (1/2)*jnp.einsum('ipqjrr -> ipq', tbt_full)
-    #         if trbt_is_None == False:
-    #             obt_tilde -= (3/8)*jnp.einsum('ipqjrrktt -> ipq', trbt_full)
-
-
-    if trbt_is_None == False:
-        trbt_diff = trbt_full - trbt_thc
-        tot_cost += ten_norm(trbt_diff, fro=fro)
+    tot_cost, one_norm = _separate_costs(obt_full, tbt_full, trbt_full, theta, zeta, gamma, bliss_params, bliss, trbt_is_None, regularize, norm_tbt_sq)
 
     if regularize:
-        one_norm = sum(_hthc_vib_one_norm(obt_full, tbt_full, trbt_full, zeta, gamma, obt_is_none, trbt_is_None))
-        # print (jax.debug.print('One norm  = {}', one_norm))
         tot_cost += rho * one_norm
-    
+
+    # jax.debug.print('fro_norm: {fro_norm}, one_norm: {one_norm}', fro_norm=fro_norm, one_norm=one_norm)
     return tot_cost
 
 
 
 
 
+def initialize_thc_params(Nmode, Nmodal, Nthc, param_keys, initial_guess=None, trbt_is_None=True, bliss=False, random=False):
+    """
+    Initialize THC (or more generally BLISS THC) parameters.
+    """
+    if initial_guess is None:
+        theta={}
+        for i in range(Nmode):
+            theta_r = np.random.uniform(low=-np.pi, high=np.pi, size=(Nmodal - 1, Nthc[i]))
+            theta[i] = theta_r
+        zeta={}
+        for i in range(Nmode):
+            for j in range(i):
+                zeta[(i,j)] = np.zeros((Nthc[i], Nthc[j]))
+        params={'theta': theta, 'zeta': zeta}
+        if trbt_is_None == False:
+            gamma = {}
+            for i in range(Nmode):
+                for j in range(i):
+                    for k in range (j):
+                        gamma[(i,j,k)] = np.zeros((Nthc[i], Nthc[j], Nthc[k]))
+        if bliss:
+            bliss_params = initialize_bliss_tensors(Nmode, Nmodal, param_keys, random)
+            params.update(bliss_params)
+        else:
+            bliss_params = {}
+    elif isinstance(initial_guess, dict):
+        params = copy(initial_guess)
+        if trbt_is_None == False:
+            if 'gamma' not in params:
+                params['gamma'] = np.zeros((Nmode, Nmode, Nmode, Nthc, Nthc, Nthc))
+        if bliss:
+            bliss_params = {}
+            for sym in param_keys:
+                if sym in params:
+                    bliss_params[sym] = params[sym]
+                else:
+                    new_bliss_param = initialize_bliss_tensors(Nmode, Nmodal, [sym], random)
+                    params.update(new_bliss_param)
+                    bliss_params.update(new_bliss_param)
+        else:
+            bliss_params = {}
+    else:
+        raise ValueError("initial_guess needs to be either None or a dictionary.")
+    return params, bliss_params
 
 
-def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize=True, maxiter=10000, initial_guess=None, learning_rate = 7.5e-3, verbose=True, fro=True, chunk_size = 200):
+
+
+
+
+
+
+def get_vib_hthc(obt, tbt, trbt=None, Nthc=None, regularize=True, bliss=False, maxiter=10000, initial_guess=None, syms = None | list, random=False, learning_rate = 7.5e-3, verbose=True, chunk_size = 200):
     """
     Function to perform heterogeneous THC i.e. number of THC orbitals can be different for different modes.
     Input:
     ------
-    tbt: Two body tensor of shape (Nmode, Nmodal, Nmodal, Nmode, Nmodal, Nmodal)
+    tbt: Two body tensor of shape (Nmode, Nmodal, Nmodal, Nmode, Nmodal, Nmodal). This is assumed to be unsymmetrized. So pass H2_nonsym here.
     trbt: Three body tensor of shape (Nmode, Nmodal, Nmodal, Nmode, Nmodal, Nmodal, Nmode, Nmodal, Nmodal)
     obt: One body tensor of shape (Nmode, Nmodal, Nmodal)
-    ob_sym_list: List of symmetry operators (not implemented)
     Nthc: list of number of THC orbitals for each mode
+    bliss: If True, the code performs BLISS THC
+    initial_guess: Initial guess for THC provided as a dictionary
+    random: If True, when bliss is True and initial_guess is None, BLISS parameters are initialized to random values
+    syms: List of symmetries to be included in the Killer operator. It could be one of the non-empty subsets of ['A', 'B', 'C', 'D', 'E', 'F'].
     """
 
     Nmode = tbt.shape[0]
@@ -403,45 +570,48 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
             print(f"Using default homogeneous THC rank of ceil(num_modals+1) = {Nthc}")
     elif type(Nthc) is int:
         Nthc = (Nthc,)*Nmode
-        print (f"Performing Homogeneous THC: This function might be slover than the other implementation")
+        print (f"Performing homogeneous THC")
     elif type(Nthc) is list:
         if len(Nthc) != Nmode:
-            raise ("Nthc must of length Nmode if not an integer")
+            raise ("Nthc must be of length Nmode if not an integer")
         Nthc = tuple(Nthc)
     Rthc = max(Nthc)
 
 
     #___________________________________________________________________________________________________________________________________
     #___________________________________________Bliss symmetries and their coefficients_________________________________________________
-    num_ob_syms = len(ob_sym_list)
-    avec_len, bvec_len, ob_mat_num_params, dvec_len = _get_BLISS_sizes(num_ob_syms, Nmodal)
-    beta_params_len = num_ob_syms * ob_mat_num_params
+    mc = 3 if trbt is not None else 2 
+    param_keys = None
+    if bliss:
+        # Pre-compute bliss static index maps for dynamic JAX reconstruction
+        if isinstance(syms, list):
+            # Ensuring unwanted symmetries are removed
+            if mc < 3:
+                if 'D' in syms: syms.remove('D')
+                if 'E' in syms: syms.remove('E')
+                if 'F' in syms: syms.remove('F')
+            if tbt is None:
+                if 'B' in syms: syms.remove('B')
+                if 'C' in syms: syms.remove('C')
+            if obt is None:
+                if 'A' in syms: syms.remove('A')
+            param_keys = syms
+        else:
+            if mc == 2: 
+                param_keys = ['A', 'B', 'C']
+            elif mc == 3:
+                param_keys = ['A', 'B', 'C', 'D', 'E', 'F']
+        scatter_mappings = build_scatter_indices(Nmode, Nmodal, param_keys)
 
     if obt is None:
-        obt_is_none = True
-    else:
-        obt_is_none = False
+        raise ("One body tensor must be provided")
 
     if trbt is None:
         trbt_is_None = True
+        trbt_full = None
     else:
         trbt_is_None = False
 
-    if num_ob_syms > 0:
-        include_bliss = True
-    else:
-        include_bliss = False
-
-    ob_sym_mats = jnp.array([ob_sym_list[kk][0] for kk in range(num_ob_syms)])
-    ob_sym_vals = jnp.array([ob_sym_list[kk][1] for kk in range(num_ob_syms)])
-
-    if verbose and include_bliss:
-        print(f"Found {num_ob_syms} one-body symmetries for BLISS terms")
-        print(f"Total number of BLISS parameters to be optimized: {avec_len+bvec_len+beta_params_len}, composed of:")
-        print(f"    - {avec_len} one-body scalars")
-        print(f"    - {bvec_len} two-body scalars")
-        print(f"    - {num_ob_syms} one-body matrices, each with {ob_mat_num_params} free variables")
-        print(f"    - {dvec_len} two-body scalars mixing beta matrices with symmetries")
     #___________________________________________________________________________________________________________________________________
     #___________________________________________________________________________________________________________________________________
 
@@ -450,51 +620,30 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
 
     #___________________________________________________________________________________________________________________________________
     #_________________________________________________Setting up initial guess and rho__________________________________________________
-    if initial_guess is None:
-        theta={}
-        for i in range(Nmode):
-            theta_r = np.random.uniform(low=-np.pi, high=np.pi, size=(Nmodal - 1, Nthc[i]))
-            theta[i] = theta_r
-        zeta={}
-        for i in range(Nmode):
-            for j in range(i):
-                zeta[(i,j)] = np.zeros((Nthc[i], Nthc[j]))
-        params={}
-        params['theta'] = theta
-        params['zeta'] = zeta
-        if trbt_is_None == False:
-            gamma = {}
-            for i in range(Nmode):
-                for j in range(i):
-                    for k in range (j):
-                        gamma[(i,j,k)] = np.zeros((Nthc[i], Nthc[j], Nthc[k]))
-        if verbose:
-          print ("Initial guess is set to None")
-    elif isinstance(initial_guess, dict):
-        params = copy(initial_guess)
-        if trbt_is_None == False:
-            if 'gamma' not in params:
-                params['gamma'] = np.zeros((Nmode, Nmode, Nmode, Nthc, Nthc, Nthc))
-        if verbose:
-          print ("Initial guess is user provided")
-        
-
+    params, bliss_params = initialize_thc_params(Nmode, Nmodal, Nthc, param_keys, initial_guess, trbt_is_None, bliss, random=random)
     if regularize is False or regularize is None:
         rho = 0
         if verbose:
             print(f"No regularization: setting rho=0")
-    else:
+    elif type(regularize) is float or type(regularize) is int:
         rho = regularize
         regularize=True
         if verbose:
-            print(f"Regularization found: setting rho={rho:.2e}")
+            print(f"Using regularization constant, rho={rho:.2e}")
+    elif regularize is True:
+        rho = 1e-3
+        if verbose:
+            print(f"Using default regularization constant, rho={rho:.2e}")
+
     #___________________________________________________________________________________________________________________________________
     #___________________________________________________________________________________________________________________________________
+
 
     def build_zeta_index_map(zeta_dict):
         """
         Creates a flat 1D array of zeta values and a tuple of indices
-        mapping them to a padded array.
+        mapping them to a padded array. This allows reconstructing the full symmetrized zeta tensor using unsymmetrized zeta_dict.
+        So zeta_dict is assumed to be the zeta tensor for an unsymmetrized tbt such as H2_nonsym
         """
         flat_values = []
         i_idx, j_idx, u_idx, v_idx = [], [], [], []
@@ -503,11 +652,11 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
             U, V = Zij.shape
             for u in range(U):
                 for v in range(V):
-                    flat_values.append(Zij[u, v])
-                    i_idx.append(i)
-                    j_idx.append(j)
-                    u_idx.append(u)
-                    v_idx.append(v)
+                    flat_values.extend([Zij[u, v]/2, Zij[u, v]/2])
+                    i_idx.extend([i, j])
+                    j_idx.extend([j, i])
+                    u_idx.extend([u, v])
+                    v_idx.extend([v, u])
                     
         # Convert to JAX arrays. 
         # The indices will be treated as static constants by the JIT compiler.
@@ -540,37 +689,43 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
     zeta_vec, zeta_indices = build_zeta_index_map(params['zeta'])
     theta_vec, theta_indices = build_theta_index_map(params['theta'])
     x0 = jnp.concatenate([theta_vec, zeta_vec])
-    theta_size = theta_vec.shape[0]
-    indices = (theta_indices, zeta_indices)
+    theta_size, zeta_size = theta_vec.shape[0], zeta_vec.shape[0]
+    split_locs = (theta_size, zeta_size)
+    indices = {'theta': theta_indices, 'zeta': zeta_indices}
+
+    if bliss:
+       bliss_params_1d = jnp.array(pack_minimal_bliss_params(bliss_params, scatter_mappings))
+       x0 = jnp.concatenate([x0, bliss_params_1d])
+       split_locs += tuple([scatter_mappings[k][1] for k in scatter_mappings.keys()])
+       scatter_mappings = {k: (jnp.array(v[0]), v[1]) for k, v in scatter_mappings.items()}
+       indices['bliss'] = {k:v[0] for k,v in scatter_mappings.items()}
 
 
-    def pack_2dict(theta, zeta, Nthc, Nmode, gamma=None, avec=None, bvec=None, beta_mats_params=None, dvec=None):
+    def pack_2dict(theta, zeta, Nthc, Nmode, gamma=None, bliss_params=None):
         theta_c = {i: np.array(theta[i, :, :Nthc[i]]) for i in range(Nmode)}
-        zeta_c = {(i,j): np.array(zeta[i, j, :Nthc[i], :Nthc[j]]) for i in range (Nmode) for j in range(i)}
+        zeta_c = {(i,j): np.array(zeta[i, j, :Nthc[i], :Nthc[j]])*2 for i in range (Nmode) for j in range(i)}       # The factor of 2 is to map symmetrized zeta to unsymmetrized zeta
         my_dict = {"theta" : theta_c, "zeta" : zeta_c, "Nthc": Nthc}
         if trbt_is_None == False:
             my_dict["gamma"] = gamma
-        if include_bliss:
-            my_dict["avec"] = avec
-            my_dict["bvec"] = bvec
-            my_dict["beta_mats_params"] = beta_mats_params
-            my_dict["dvec"] = dvec
+        if bliss_params is not None:
+            my_dict.update(bliss_params)
         return my_dict
 
+    # We will pass symmetrized tbt to the optimizer
+    jnp_tbt = jnp.array(symmetrize_tbt(tbt))
+    jnp_obt = jnp.array(obt)
 
-    jnp_tbt = jnp.array(tbt)
-
-    # --- NEW: Precompute the constant target norm ---
-    norm_tbt_sq = jnp.sum(jnp_tbt**2)
+    # Precompute the constant target norm ---
+    norm_tbt_sq = jnp.sum(jnp_tbt**2).item()
 
     @jit
     def cost_flat(x_vec):
-        return _cost_vib(x_vec, obt, jnp_tbt, trbt, ob_sym_mats, ob_sym_vals, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, obt_is_none=obt_is_none, trbt_is_None=trbt_is_None, rho=rho, indices=indices, regularize=regularize, fro=fro, norm_tbt_sq=norm_tbt_sq)
+        return _cost_vib(x_vec, jnp_obt, jnp_tbt, trbt_full, indices, split_locs, Rthc, Nmode, Nmodal, bliss, trbt_is_None, rho, regularize, norm_tbt_sq)
     
     optimizer = optax.adam(learning_rate)
     opt_state = optimizer.init(x0)
 
-    # --- NEW: Compile chunk_size iterations into a single XLA execution ---
+    # Compile chunk_size iterations into a single XLA execution ---
     
     @jit
     def update_chunk(x_vec, opt_state):
@@ -593,38 +748,29 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
 
     # Optimization loop setup
     losses = []
-    org_diff = ten_norm(tbt, fro=fro)
+    org_diff = ten_norm(tbt, fro=True)
     if trbt_is_None == False:
-        org_diff += ten_norm(trbt, fro=fro)
+        org_diff += ten_norm(trbt, fro=True)
     print ("Original tensor norm: ", org_diff, flush = True)
-    
-    int_theta, int_zeta, int_gamma, _, _, _, _ = _extract_from_x_vec(x0, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, trbt_is_None, indices)
-    
-    # Calculate how many chunk_size-step blocks to run
+
+   # Calculate how many chunk_size-step blocks to run
     num_chunks = maxiter // chunk_size
 
     for chunk in range(num_chunks):
         # i maps to 0, 100, 200, 300, etc. if chunk_size = 100
         i = chunk * chunk_size
         
-        # 1. Evaluate and print intermediate state BEFORE the chunk runs
-        int_theta, int_zeta, int_gamma, _, _, _, _ = _extract_from_x_vec(x0, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, trbt_is_None, indices)
-        int_norm = sum(_hthc_vib_one_norm(obt, jnp_tbt, trbt, int_zeta, int_gamma, obt_is_none, trbt_is_None))
-        int_error = _tbt_error_opt(int_theta, int_zeta, jnp_tbt, norm_tbt_sq)
-        if trbt_is_None == False:
-            int_error += ten_norm(int_trbt - trbt, fro=fro)
+        # Evaluate and print intermediate state BEFORE the chunk runs
+        int_theta, int_zeta, int_gamma, int_bliss_params = _extract_from_x_vec(x0, indices, split_locs, Rthc, Nmode, Nmodal, bliss, trbt_is_None)
+        fro_norm, one_norm = _separate_costs(jnp_obt, jnp_tbt, trbt, int_theta, int_zeta, int_gamma, int_bliss_params, bliss, trbt_is_None, regularize, norm_tbt_sq)
+        one_norm = 0.0 if one_norm is None else one_norm.item()
+        print (f'Iter {i}: (error, 1-norm) = ({fro_norm.item()}, {one_norm})', flush = True)
 
-        print (f'Iter {i}: (one-norm, error) = ({int_norm}, {int_error.item()})', flush = True)
-
-        # 2. Execute chunk_size steps
+        # Execute chunk_size steps
         x0, opt_state, chunk_losses = update_chunk(x0, opt_state)
         
-        # 3. Pull the chunk_size losses back to Python memory once
+        # Pull the chunk_size losses back to Python memory once
         losses.extend(np.array(chunk_losses).tolist())
-
-        if verbose == True and i % 1000 == 0:
-            # Print the very last loss of the current chunk
-            print(f"Iteration {i}: Loss = {losses[-1]:.6e}", flush = True)
         
         # # Simple convergence check (using the last two elements of the entire history)
         # if len(losses) > 1 and abs(losses[-1] - losses[-2]) < 1e-12:
@@ -632,18 +778,12 @@ def get_vib_hthc(tbt, trbt=None, obt=None, ob_sym_list=[], Nthc=None, regularize
         #         print(f"Converged around iteration {i + chunk_size}", flush = True)
         #     break
         
-    theta, zeta, gamma, avec, bvec, beta_mats_params, dvec = _extract_from_x_vec(x0, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, trbt_is_None, indices)    
-    final_params = pack_2dict(theta, zeta, Nthc, Nmode, gamma, avec, bvec, beta_mats_params, dvec)
-    L2_cost = _cost_vib(x0, obt, jnp_tbt, trbt, ob_sym_mats, ob_sym_vals, theta_size, Rthc, Nmode, Nmodal, num_ob_syms, include_bliss, obt_is_none, trbt_is_None, 0, indices, False, fro, norm_tbt_sq)
-    lam = float(sum(_hthc_vib_one_norm(obt, jnp_tbt, trbt, zeta, gamma, obt_is_none, trbt_is_None)))
-
+    theta, zeta, gamma, bliss_params = _extract_from_x_vec(x0, indices, split_locs, Rthc, Nmode, Nmodal, bliss, trbt_is_None)   
+    final_params = pack_2dict(theta, zeta, Nthc, Nmode, gamma, bliss_params)
+    fro_norm, one_norm = _separate_costs(jnp_obt, jnp_tbt, trbt, theta, zeta, gamma, bliss_params, bliss, trbt_is_None, regularize, norm_tbt_sq)
+    one_norm = 0.0 if one_norm is None else one_norm.item()
     if verbose:
-        print(f"\nInitial norm is {float(ten_norm(tbt, fro=fro)):.2e}")
-        print(f"Finished THC factorization! Final norm of difference is {L2_cost:.2e}, 1-norm is {lam:.2f}\n")
-        if obt_is_none:
-            print(f"Note that one-norm does not include one-body component!")
+        print(f"\nInitial norm is {float(ten_norm(tbt, fro=True)):.2e}")
+        print(f"Finished THC factorization! Final norm of difference is {fro_norm.item():.2e}, 1-norm is {one_norm:.2e}\n")
 
-        if include_bliss:
-            print(f"BLISS included during optimization using {num_ob_syms} one-body symmetries")
-
-    return final_params, lam
+    return final_params, one_norm
