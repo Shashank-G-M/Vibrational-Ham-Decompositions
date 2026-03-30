@@ -458,7 +458,7 @@ def get_top_eigen_state(obt, tbt, tbt_cutoff = 1e-3, max_iter = 10000, tol = 1e-
 
 
 
-def get_ground_state_scipy(obt, tbt, tbt_cutoff = 1e-3, max_iter = 10000, tol = 1e-3, lr=1e-3, ncv=5):
+def get_ground_state_scipy(obt, tbt, tbt_cutoff = 1e-3, which='SA', k=1, max_iter = 10000, tol = 1e-3, ncv=5, return_eigenvectors = False, verbose = False):
   """
   Function to obtain the ground state of the Hamiltonian defined by the input one, two, and/or three body tensor.
 
@@ -515,18 +515,16 @@ def get_ground_state_scipy(obt, tbt, tbt_cutoff = 1e-3, max_iter = 10000, tol = 
     Ds[f] = Dsf
     # Ds_ten[f] = np.array(diag_to_ten(Dsf))
 
-  print ("Diagonalizing two-body fragments complete. Procedeing to ground energy estimation.")
-  print ("Number of tbt frags = ", nfrags)
+  if verbose:
+    print ("Diagonalizing two-body fragments complete. Procedeing to ground energy estimation.")
+    print ("Number of tbt frags = ", nfrags)
 
   # Usage inside your ground_state function:
-  print_memory_usage("Before JAX Arrays")
+  if verbose:
+    print_memory_usage("Before JAX Arrays")
   D0, U0, Ds, Us, G_val = jnp.array(D0), jnp.array(U0), jnp.array(Ds), jnp.array(Us), jnp.array(G_val)
-  print_memory_usage("After JAX Arrays")
-
-  # obt_mat = tu.obt2_proj_mat(obt)
-  # tbt_mat = tu.tbt2_proj_mat(tbt)
-  # H_mat = obt_mat + tbt_mat
-  # H_mat = jnp.array(H_mat.toarray())
+  if verbose:
+    print_memory_usage("After JAX Arrays")
 
 
   def matvec_wrapper(flt_state):
@@ -535,16 +533,18 @@ def get_ground_state_scipy(obt, tbt, tbt_cutoff = 1e-3, max_iter = 10000, tol = 
 
   dim = nmodals**nmodes
 
-
   A_op = LinearOperator((dim, dim), matvec=matvec_wrapper, dtype=np.float64)
 
   # 3. Solve for the Ground State
-  print("Starting iterative solver...")
-  print_memory_usage("Before lobpcg")
-  eigenvalues, eigenvectors = eigsh(A_op, k=1, which='SA', maxiter=max_iter, tol=tol, ncv=ncv)
-  print_memory_usage("After lobpcg")
-
-  # print(f"Ground State Energy: {eigenvalues[0]:.6f}")
+  if verbose:
+    print("Starting iterative solver...")
+    print_memory_usage("Before eigsh")
+  if return_eigenvectors:
+    eigenvalues, eigenvectors = eigsh(A_op, k=k, which=which, maxiter=max_iter, tol=tol, ncv=ncv, return_eigenvectors=True)
+  else:
+    eigenvalues = eigsh(A_op, k=k, which=which, maxiter=max_iter, tol=tol, ncv=ncv, return_eigenvectors=False)
+  if verbose:
+    print_memory_usage("After eigsh")
 
   jax.clear_caches()
 
@@ -552,7 +552,10 @@ def get_ground_state_scipy(obt, tbt, tbt_cutoff = 1e-3, max_iter = 10000, tol = 
   gc.collect()
 
 
-  return eigenvalues[0], eigenvectors
+  if return_eigenvectors:
+    return eigenvalues, eigenvectors
+  else:
+    return eigenvalues
 
 
 
