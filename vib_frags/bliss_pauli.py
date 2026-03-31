@@ -471,7 +471,7 @@ def optimize_bliss_pauli(obt=None, tbt=None, trbt=None, initial_guess=None, syms
     
     if len(param_keys) == 0:
         raise ValueError("Provided tensors and list of symmetries are incompatible.")
-    print ("Symmetries considered for BLISS:", param_keys)
+    print ("Symmetries considered for BLISS:", param_keys, flush=True)
 
 
     # Cast Hamiltonian inputs to immutable JAX arrays
@@ -503,12 +503,12 @@ def optimize_bliss_pauli(obt=None, tbt=None, trbt=None, initial_guess=None, syms
 
     # Execute the Optimization Loop
     print(f"Starting optimization in {mc}-body space | "
-          f"Parameters strictly tracking {total_minimal_params} minimal degrees of freedom.")
+          f"Parameters strictly tracking {total_minimal_params} minimal degrees of freedom.", flush=True)
     
     for i in range(maxiter):
         params_1d, opt_state, loss_val = step(params_1d, opt_state)
         if i % chunk_size == 0 or i == maxiter - 1:
-            print(f"Iteration {i:04d} | 1-Norm Loss = {loss_val:.6f}")
+            print(f"Iteration {i:04d} | 1-Norm Loss = {loss_val:.6f}", flush=True)
 
     # Final Hamiltonian Transformation & Type Coercion to standard NumPy
     final_dense_dict = unpack_minimal_bliss_params_jax(params_1d, scatter_mappings)
