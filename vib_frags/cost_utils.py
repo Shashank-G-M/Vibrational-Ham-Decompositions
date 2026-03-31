@@ -2,6 +2,7 @@
 import numpy as np
 from . import tensor_utils as tu
 import warnings
+from copy import copy
 
 
 
@@ -171,8 +172,8 @@ def get_QROAM_cost(S, m, dirty=bool | int, clean=bool | int, nmodes=None, nmodal
     else:
       dQ = dirty
     dQ += int(clean)                       #If additional clean qubits are provided along with dirty qubits, then clean qubits will be treated as dirty.
-    if dQ < 3*m:
-      warnings.warn(f"The number of available dirty qubits {(dQ)} must not be less than thrice the size of the QROM volume {(m)}. Switching to QROM.", UserWarning)
+    if dQ < 2*m:
+      warnings.warn(f"The number of available dirty qubits {(dQ)} must not be less than twice the size of the QROM volume {(m)}. Switching to QROM.", UserWarning)
     else:
       # Calculate the optimal possible value of k
       k = find_dirty_QROAM_k(S, m, dQ)
@@ -359,6 +360,9 @@ def get_Pauli_QPE_cost(one_norm, eps, nmodes, nmodals, S, MC, br = 20, aleph = 2
   """
   Function to obtain the cost of performing QPE to a target accuracy of eps using Pauli LCU based block encoding.
   """
+  if dirty == True:
+    dirty = nmodes*nmodals + aleph + br                         #The system qubits, aleph qubits from alias sampling, and the ancillas from uniform superposition are idle dirty qubits
+
   # PREP and PREP inverse cost
   C_P, C_Pdag, C_P_qubits = get_Pauli_PREP_UNPREP_cost(nmodes, nmodals, S, aleph, MC, br, dirty, clean, verbose)
   # SELECT cost
@@ -368,7 +372,7 @@ def get_Pauli_QPE_cost(one_norm, eps, nmodes, nmodals, S, MC, br = 20, aleph = 2
   C_BE = C_P + C_S + C_Pdag
   # C_BE = C_P + C_S + C_P
 
-  QPE_nsteps = np.sqrt(2)*np.pi*one_norm/(2*eps)           # Multiplier to Walker operator cost to get QPE cost
+  QPE_nsteps = np.ceil(np.pi*one_norm/(2*eps))           # Multiplier to Walker operator cost to get QPE cost
 
   #Total energy estimation cost
   C_Pauli = QPE_nsteps*(C_BE + np.ceil(np.log2(S)) + aleph + 2)
@@ -493,7 +497,7 @@ def get_THC_SEL_cost(nmodes, nmodals, nthc, MC, beth = 20, subsel_a = True, diff
     C_S += 4*R_sum
 
   #Qubit cost
-  C_S_qubits = nmodes*nmodals + nmodals*beth + - 2
+  C_S_qubits = nmodes*nmodals + nmodals*beth - 2
 
 
   return C_S, C_S_qubits
@@ -521,6 +525,10 @@ def get_THC_QPE_cost(lmbda, eps, nmodes, nmodals, nthc, MC, br = 20, aleph = 20,
   if PREP_vol is not None:
     S = PREP_vol
 
+  if dirty == True:
+    dirty = nmodes*nmodals + aleph + nmodals*beth - 2                 #The system qubits, aleph qubits from alias sampling, and the ancillas for orbital rotation are idle dirty qubits
+
+
   C_P, C_Pdag, C_P_qubits = get_THC_PREP_UNPREP_cost(nmodes, nmodals, S, R, nthc, MC, br, aleph, PREP_vol, dirty, clean, verbose)
   C_S, C_S_qubits = get_THC_SEL_cost(nmodes, nmodals, nthc, MC, beth, subsel_a, diff_angles, verbose)
 
@@ -530,7 +538,7 @@ def get_THC_QPE_cost(lmbda, eps, nmodes, nmodals, nthc, MC, br = 20, aleph = 20,
     R = nthc
 
   #Number of steps in QPE i.e. number of access to walker operator
-  QPE_nsteps = np.sqrt(2)*np.pi*lmbda/(2*eps)
+  QPE_nsteps = np.ceil(np.pi*lmbda/(2*eps))
   #Cost of single walker = Cost of block encoding + cost of controlled reflection
   C_BE = C_P + C_S + C_Pdag
   C_W = C_BE + np.ceil(np.log2(S)) + aleph + 1
