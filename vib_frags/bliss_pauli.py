@@ -388,7 +388,7 @@ def opt_Pauli_LCU_1norm_jax(obt, tbt, trbt=None):
 # The High-Performance Optax API
 # =============================================================================
 
-def optimize_bliss_pauli(obt=None, tbt=None, trbt=None, initial_guess=None, syms=None | list, 
+def optimize_bliss_pauli(obt=None, tbt=None, trbt=None, initial_guess=None, syms=None, 
                     maxiter=1000, learning_rate=1e-3, chunk_size=100, ret_params=False):
     """
     Main entry point for minimizing the 1-norm of the Pauli LCU via Optax.
@@ -406,7 +406,7 @@ def optimize_bliss_pauli(obt=None, tbt=None, trbt=None, initial_guess=None, syms
         Initial parameters. Can be a full dictionary or minimal 1D array.
     syms : list of strings, optional
         List of symmetries to be included in the Killer operator. 
-        It could be one of the non-empty subset of ['A', 'B', 'C', 'D', 'E', 'F'].
+        It could be one of the non-empty subsets of ['A', 'B', 'C', 'D', 'E', 'F'].
     maxiter : int
         Maximum iterations for the Adam optimizer.
     learning_rate : float
@@ -454,6 +454,7 @@ def optimize_bliss_pauli(obt=None, tbt=None, trbt=None, initial_guess=None, syms
         param_keys = list(initial_guess.keys())
         scatter_mappings = build_scatter_indices(nmodes, nmodals, param_keys)
         params_1d = jnp.array(pack_minimal_bliss_params(initial_guess, scatter_mappings))
+        total_minimal_params = len(params_1d)
     elif initial_guess is None:
         if syms is None:
             if mc == 1:
