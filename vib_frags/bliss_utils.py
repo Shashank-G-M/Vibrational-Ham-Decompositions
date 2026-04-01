@@ -159,6 +159,8 @@ def construct_killer(nmodes, nmodals, mc, params=None):
     params : dict, np.ndarray, or None, optional
         The coefficient parameters. If None, symmetrically valid random tensors 
         are generated automatically.
+        If np.ndarray, it is assumed to have parameters corresponding to all symmetries
+        at a given mc lvel.
         
     Returns:
     --------
@@ -200,13 +202,9 @@ def construct_killer(nmodes, nmodals, mc, params=None):
     # -------------------------------------------------------------------------
     # 1-Body Space Couplings (mc >= 1)
     # -------------------------------------------------------------------------
-    if mc >= 1:
+    if mc >= 1 and 'A' in param_dict:
         A = param_dict['A']
-        
-        # \Delta c_A = -\sum_i A^i
         dc -= np.sum(A)
-        
-        # \Delta h_A = A^i \delta_{pq}
         dh += np.einsum('i,pq->ipq', A, eye)
 
     # -------------------------------------------------------------------------
@@ -214,56 +212,37 @@ def construct_killer(nmodes, nmodals, mc, params=None):
     # Target shape indices: 'ipqjrs'
     # -------------------------------------------------------------------------
     if mc >= 2:
-        B = param_dict['B']
-        C = param_dict['C']
-        
-        # \Delta c_B = -\sum_{i,j} B^{ij}
-        dc -= np.sum(B)
-        
-        # \Delta h_C = -\sum_j C^{ji}_{pq}
-        dh -= np.einsum('jipq->ipq', C)
-        
-        # \Delta g_B = B^{ij} \delta_{pq} \delta_{rs}
-        dg += np.einsum('ij,pq,rs->ipqjrs', B, eye, eye)
-        
-        # \Delta g_C = 1/2 (C^{ij}_{rs} \delta_{pq} + C^{ji}_{pq} \delta_{rs})
-        C_term1 = np.einsum('ijrs,pq->ipqjrs', C, eye)
-        C_term2 = np.einsum('jipq,rs->ipqjrs', C, eye)
-        dg += 0.5 * (C_term1 + C_term2)
+        if 'B' in param_dict:
+            B = param_dict['B']
+            dc -= np.sum(B)
+            dg += np.einsum('ij,pq,rs->ipqjrs', B, eye, eye)
+        if 'C' in param_dict:
+            C = param_dict['C']
+            dh -= np.einsum('jipq->ipq', C)
+            dg += 0.5 * (np.einsum('ijrs,pq->ipqjrs', C, eye) + np.einsum('jipq,rs->ipqjrs', C, eye))
+
 
     # -------------------------------------------------------------------------
     # 3-Body Space Couplings (mc >= 3)
     # Target shape indices: 'ipqjrsktu'
     # -------------------------------------------------------------------------
     if mc >= 3:
-        D = param_dict['D']
-        E = param_dict['E']
-        F = param_dict['F']
-        
-        # \Delta c_D = -\sum_{i,j,k} D^{ijk}
-        dc -= np.sum(D)
-        
-        # \Delta h_E = -\sum_{j,k} E^{jki}_{pq}
-        dh -= np.einsum('jkipq->ipq', E)
-        
-        # \Delta g_F = -\sum_k F^{kij}_{pqrs}
-        # Notice target remains ipqjrs to match the 2-body space
-        dg -= np.einsum('kijpqrs->ipqjrs', F)
-        
-        # \Delta v_D = D^{ijk} \delta_{pq} \delta_{rs} \delta_{tu}
-        dv += np.einsum('ijk,pq,rs,tu->ipqjrsktu', D, eye, eye, eye)
-        
-        # \Delta v_E = 1/3 ( E^{ijk}_{tu} \delta_{pq} \delta_{rs} + E^{ikj}_{rs} \delta_{pq} \delta_{tu} + E^{kji}_{pq} \delta_{rs} \delta_{tu} )
-        E_term1 = np.einsum('ijktu,pq,rs->ipqjrsktu', E, eye, eye)
-        E_term2 = np.einsum('ikjrs,pq,tu->ipqjrsktu', E, eye, eye)
-        E_term3 = np.einsum('kjipq,rs,tu->ipqjrsktu', E, eye, eye)
-        dv += (E_term1 + E_term2 + E_term3) / 3.0
-        
-        # \Delta v_F = 1/3 ( F^{ijk}_{rstu} \delta_{pq} + F^{jik}_{pqtu} \delta_{rs} + F^{kji}_{rspq} \delta_{tu} )
-        F_term1 = np.einsum('ijkrstu,pq->ipqjrsktu', F, eye)
-        F_term2 = np.einsum('jikpqtu,rs->ipqjrsktu', F, eye)
-        F_term3 = np.einsum('kjirspq,tu->ipqjrsktu', F, eye)
-        dv += (F_term1 + F_term2 + F_term3) / 3.0
+        if 'D' in param_dict:
+            D = param_dict['D']
+            dc -= np.sum(D)
+            dv += np.einsum('ijk,pq,rs,tu->ipqjrsktu', D, eye, eye, eye)
+        if 'E' in param_dict:
+            E = param_dict['E']
+            dh -= np.einsum('jkipq->ipq', E)
+            dv += (np.einsum('ijktu,pq,rs->ipqjrsktu', E, eye, eye) + 
+               np.einsum('ikjrs,pq,tu->ipqjrsktu', E, eye, eye) + 
+               np.einsum('kjipq,rs,tu->ipqjrsktu', E, eye, eye)) / 3.0
+        if 'F' in param_dict:
+            F = param_dict['F']
+            dg -= np.einsum('kijpqrs->ipqjrs', F)
+            dv += (np.einsum('ijkrstu,pq->ipqjrsktu', F, eye) + 
+               np.einsum('jikpqtu,rs->ipqjrsktu', F, eye) + 
+               np.einsum('kjirspq,tu->ipqjrsktu', F, eye)) / 3.0   
 
     return dc, dh, dg, dv
 
