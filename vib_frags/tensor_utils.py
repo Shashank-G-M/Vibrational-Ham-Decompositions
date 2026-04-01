@@ -386,6 +386,8 @@ def unsymmetrize_trbt(trbt):
   np.ndarray
       An unsymmetrized three body tensor of shape (i, p, q, j, r, s, k, t, u). 
   """
+  if trbt is None:
+    return None
   
   trbt_nonsym = np.zeros_like(trbt)
   
