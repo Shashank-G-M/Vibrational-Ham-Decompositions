@@ -1,28 +1,74 @@
 # A module to estimate quantum resources for different fragmentation schemes
 import numpy as np
 from . import tensor_utils as tu
-import warnings
 from copy import copy
 
 
 
 #Obtain pruned tensors for sparse Pauli LCU along with error in approximation
-def get_pruned_tensors_w_err(H1, H2_nonsym = None, H3_nonsym = None, MC = 2, cutoff = 0):
-  """
-  H1 : np.array((nmodes, nmodals, nmodals))
-  H2 : np.array((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
-  H3 : np.array((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
-  """
-  H1_approx = np.where(np.abs(H1) > cutoff, H1, 0)
-  H2_nonsym_approx = np.where(np.abs(H2_nonsym) > cutoff, H2_nonsym, 0)
-  H3_nonsym_approx = None
-  sparse_ten_error = np.sqrt(np.sum((H1_approx - H1)**2)) + np.sqrt(np.sum((H2_nonsym_approx - H2_nonsym)**2))
-  if MC == 3:
-    _mask = np.abs(H3_nonsym) <= cutoff
-    H3_nonsym_approx = copy(H3_nonsym)
-    H3_nonsym_approx[_mask] = 0
-    sparse_ten_error += np.sqrt(np.sum(H3_nonsym[_mask]**2))
-  return H1_approx, H2_nonsym_approx, H3_nonsym_approx, sparse_ten_error
+# def get_pruned_tensors_w_err(H1, H2_nonsym = None, H3_nonsym = None, MC = 2, cutoff = 0):
+#   """
+#   H1 : np.array((nmodes, nmodals, nmodals))
+#   H2 : np.array((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
+#   H3 : np.array((nmodes, nmodals, nmodals, nmodes, nmodals, nmodals, nmodes, nmodals, nmodals))
+#   """
+#   H1_approx = np.where(np.abs(H1) > cutoff, H1, 0)
+#   H2_nonsym_approx = np.where(np.abs(H2_nonsym) > cutoff, H2_nonsym, 0)
+#   H3_nonsym_approx = None
+#   sparse_ten_error = np.sqrt(np.sum((H1_approx - H1)**2)) + np.sqrt(np.sum((H2_nonsym_approx - H2_nonsym)**2))
+#   if MC == 3:
+#     _mask = np.abs(H3_nonsym) <= cutoff
+#     H3_nonsym_approx = copy(H3_nonsym)
+#     H3_nonsym_approx[_mask] = 0
+#     sparse_ten_error += np.sqrt(np.sum(H3_nonsym[_mask]**2))
+#   return H1_approx, H2_nonsym_approx, H3_nonsym_approx, sparse_ten_error
+
+
+
+
+def get_pruned_tensors_w_err(H1, H2_nonsym=None, H3_nonsym=None, MC=2, cutoff=0):
+    
+    # Process H1 using a memory-efficient mask
+    mask1 = np.abs(H1) <= cutoff
+    H1_approx = H1.copy()
+    H1_approx[mask1] = 0
+    err1 = np.sqrt(np.sum(H1[mask1]**2))
+    
+    # Process H2 using the same mask logic if it is provided
+    err2 = 0.0
+    H2_nonsym_approx = None
+    if H2_nonsym is not None:
+        mask2 = np.abs(H2_nonsym) <= cutoff
+        H2_nonsym_approx = H2_nonsym.copy()
+        H2_nonsym_approx[mask2] = 0
+        err2 = np.sqrt(np.sum(H2_nonsym[mask2]**2))
+        
+    sparse_ten_error = err1 + err2
+    
+    H3_nonsym_approx = None
+    if MC == 3 and H3_nonsym is not None:
+        # Pre-allocate the output array for H3 to avoid massive copies
+        H3_nonsym_approx = np.empty_like(H3_nonsym)
+        err3_sq = 0.0
+        
+        # Process H3 slice-by-slice along the first dimension (chunking)
+        for i in range(H3_nonsym.shape[0]):
+            slice_h3 = H3_nonsym[i]
+            mask3 = np.abs(slice_h3) <= cutoff
+            
+            # Accumulate the squared error strictly for pruned elements
+            err3_sq += np.sum(slice_h3[mask3]**2)
+            
+            # Create the approximated slice
+            approx_slice = slice_h3.copy()
+            approx_slice[mask3] = 0
+            
+            # Place the finalized slice into the pre-allocated array
+            H3_nonsym_approx[i] = approx_slice
+            
+        sparse_ten_error += np.sqrt(err3_sq)
+        
+    return H1_approx, H2_nonsym_approx, H3_nonsym_approx, sparse_ten_error
 
 
 
@@ -173,7 +219,7 @@ def get_QROAM_cost(S, m, dirty=bool | int, clean=bool | int, nmodes=None, nmodal
       dQ = dirty
     dQ += int(clean)                       #If additional clean qubits are provided along with dirty qubits, then clean qubits will be treated as dirty.
     if dQ < 2*m:
-      warnings.warn(f"The number of available dirty qubits {(dQ)} must not be less than twice the size of the QROM volume {(m)}. Switching to QROM.", UserWarning)
+      print (f"The number of available dirty qubits {(dQ)} must not be less than twice the size of the QROM volume {(m)}. Switching to QROM.")
     else:
       # Calculate the optimal possible value of k
       k = find_dirty_QROAM_k(S, m, dQ)
