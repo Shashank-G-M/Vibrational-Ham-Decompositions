@@ -352,8 +352,9 @@ def ten_norm(ten, fro=True):
 
 
 
-def hthc_vib_one_norm(obt_full, tbt_full, trbt_full, zeta, gamma, obt_is_none, trbt_is_None, Rthc):
+def hthc_vib_one_norm(obt_full, tbt_full, trbt_full, zeta, gamma, obt_is_none, trbt_is_None, Rthc, bliss_params = None):
     #This function assumes the input zeta is a dictionary with keys as tuples of mode indices
+    # optional argument bliss_params (a dictionary) allows for using precalculated one-body symmetry shift in finding the one-norm
     lambda_1 = 0.0
     sym_tbt_full = symmetrize_tbt(tbt_full)
     if trbt_is_None == False:
@@ -363,7 +364,9 @@ def hthc_vib_one_norm(obt_full, tbt_full, trbt_full, zeta, gamma, obt_is_none, t
         kappa = obt_full + (1)*np.einsum('ipqjrr -> ipq', sym_tbt_full)
         if trbt_is_None == False:
             kappa += (3/4)*np.einsum('ipqjrrktt -> ipq', sym_trbt_full)
-        Nmode = kappa.shape[0]
+        Nmode, Nmodal = kappa.shape[0], kappa.shape[-1]
+        if (bliss_params is not None) and ('A' in bliss_params):
+            _,kappa,_,_ = get_bliss_hamiltonian_jax(Nmode, Nmodal, kappa, None, None, bliss_params, 2)
         lambda_1 = (1/2)*np.sum(np.abs(np.linalg.eigvalsh(kappa)))
 
     zeta_tilde = np.zeros((Nmode, Nmode, Rthc, Rthc))
